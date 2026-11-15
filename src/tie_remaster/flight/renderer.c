@@ -26,6 +26,7 @@
 #include "tie_remaster/flight/point_lights.h"
 #include "tie_remaster/flight/render_math.h"
 #include "tie_remaster/flight/renderer_internal.h"
+#include "tie_remaster/flight/tftc_skybox.h"
 #include "tie_remaster/flight/sprite_cache.h"
 #include "tie_remaster/flight/stars.h"
 #include "tie_remaster/gpu_debug.h"
@@ -351,6 +352,7 @@ TieFlightRenderer* TieFlightRenderer_Init(int rt_w, int rt_h, AeronTextureFormat
 		.max_lod = 1000.0f,
 	});
 
+	TieFlightTftcSkybox_Release(g);
 	if (g->tftc_glow_texture) {
 		Aeron_DestroyTexture(g->tftc_glow_texture);
 		g->tftc_glow_texture = NULL;

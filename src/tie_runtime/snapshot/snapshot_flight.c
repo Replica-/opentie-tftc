@@ -743,6 +743,7 @@ static void TieFlightSnapshot_CaptureWorld(void) {
 	 * pilot save last set, which is benign — the renderer only reads
 	 * it during TIE_SCENE_FLIGHT. */
 	TieSnapshotBuilder_SetBattleId(currentbattle);
+	TieSnapshotBuilder_SetMissionName(missionfilename);
 
 	/* --- Hyperspace transition state ------------------------------- */
 	{

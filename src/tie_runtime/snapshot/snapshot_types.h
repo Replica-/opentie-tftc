@@ -973,6 +973,9 @@ typedef struct TieSnapshot {
 	 * by the HD overlay to resolve <remaster_dir>/flight/skyboxes/
 	 * battle<N>.ktx2 (or any other per-battle asset selector). */
 	uint8_t battle_id;
+	/* The mission file's basename, lowercase and without its extension
+	 * ("b1m3fm"); TFTC skyboxes are chosen by it. */
+	char mission_name[16];
 } TieSnapshot;
 
 #ifdef __cplusplus

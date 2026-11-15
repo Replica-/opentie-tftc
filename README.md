@@ -152,6 +152,13 @@ growing with the craft's throttle (the TFTC TIE fighter model has none). Only th
 the original, and a TFTC model is drawn whole, without destroyed parts hidden or turrets turning. A model that
 cannot be built logs a warning and the original is drawn. Delete `resources/tftc/` to go back to the originals.
 
+### TFTC skyboxes
+
+The copy script also takes each mission's skybox: the cubemap TFTC's mission `.ini` names in its `[SkyBoxes]`
+section, with its faces scaled to 2048 px when `ffmpeg` is installed. Flying a mission that has one draws it as
+the sky, turned by the mission's rotation, in place of the configured skybox and TIE's backdrop planets and
+nebulae, which TFTC paints into its cubemaps.
+
 ## Smoother flight
 
 Flight simulation can update at up to 240 Hz to match modern high-refresh-rate

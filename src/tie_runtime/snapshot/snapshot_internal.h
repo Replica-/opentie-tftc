@@ -73,6 +73,8 @@ uint32_t* TieSnapshotBuilder_PaletteMut(void); /* points to [256] */
  * snapshot emit from tie_core's `currentbattle` global. Renderer
  * reads via TieSnapshot.battle_id. */
 void TieSnapshotBuilder_SetBattleId(uint8_t battle_id);
+/* Stores the basename of `mission_path` ("mission/B1M3FM.TIE" -> "b1m3fm"). */
+void TieSnapshotBuilder_SetMissionName(const char* mission_path);
 void TieSnapshotBuilder_SetFlightScreen(TieFlightScreen screen);
 
 void TieSnapshotBuilder_SetClassicDims(uint16_t w, uint16_t h);

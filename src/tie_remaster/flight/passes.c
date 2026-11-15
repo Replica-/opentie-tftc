@@ -11,6 +11,7 @@
 #include "tie_remaster/flight/point_lights.h"
 #include "tie_remaster/flight/render_math.h"
 #include "tie_remaster/flight/renderer_internal.h"
+#include "tie_remaster/flight/tftc_skybox.h"
 #include "tie_remaster/flight/sprite_cache.h"
 #include "tie_remaster/flight/stars.h"
 #include "tie_remaster/gpu_debug.h"
@@ -266,6 +267,8 @@ int TieFlightRenderer_CmpDrawKey(const void* a, const void* b) {
  * state; the draw itself is the first operation in Aeron's color pass.
  * Returns NULL for the sky-less phases. */
 static AeronTexture* TieFlightRenderer_SelectSkyboxCube(TieFlightRenderer* g, const TieSnapshot* curr) {
+	/* A TFTC mission skybox replaces the configured one. */
+	AeronTexture* cube = g->tftc_skybox ? g->tftc_skybox : g->skybox_cube;
 	/* Per-phase cubemap selection:
 	 *   phase 3/5  cockpit-view streak phases — no skybox (engine
 	 *              gates rtsvga2_drawstars off here).
@@ -277,11 +280,11 @@ static AeronTexture* TieFlightRenderer_SelectSkyboxCube(TieFlightRenderer* g, co
 		case 5:
 			return NULL;
 		case 4:
-			return g->skybox_cube;
+			return cube;
 		case 6:
-			return g->skybox_cube;
+			return cube;
 		default:
-			return curr->backdrops.draw_enabled ? g->skybox_cube : NULL;
+			return curr->backdrops.draw_enabled ? cube : NULL;
 	}
 }
 
@@ -660,6 +663,7 @@ bool TieFlightRenderer_PrepareMissionAssets(TieFlightRenderer* g, AeronCommandBu
 		return true;
 
 	TieFlightRenderer_RefreshSkybox(g, cmd, snapshot->battle_id);
+	TieFlightTftcSkybox_Refresh(g, cmd, snapshot->mission_name);
 	if (Aeron_FatalErrorRequested())
 		return false;
 	return TieFlightRenderer_WarmFlightSpecies(g, cmd, snapshot);
@@ -841,7 +845,17 @@ bool TieFlightRenderer_PrepareFrame(TieFlightRenderer* g, AeronCommandBuffer* cm
 	 * (first of the color pass, under SKY billboards + meshes) is
 	 * scene-owned. Exposure 1.0 = identity for the LDR/BC6H cubes the
 	 * bundles ship. NULL cube = no sky drawn this frame. */
-	AeronScene_SetSkyCube(g->scene, TieFlightRenderer_SelectSkyboxCube(g, curr), k_tie_world_to_cube, 1.0f);
+	float sky_basis[9];
+	memcpy(sky_basis, k_tie_world_to_cube, sizeof sky_basis);
+	if (g->tftc_skybox) {
+		/* The mission's skybox rotation, in cube space. */
+		for (int r = 0; r < 3; ++r)
+			for (int c = 0; c < 3; ++c)
+				sky_basis[r * 3 + c] = g->tftc_skybox_rotation[r * 3 + 0] * k_tie_world_to_cube[0 * 3 + c] +
+									   g->tftc_skybox_rotation[r * 3 + 1] * k_tie_world_to_cube[1 * 3 + c] +
+									   g->tftc_skybox_rotation[r * 3 + 2] * k_tie_world_to_cube[2 * 3 + c];
+	}
+	AeronScene_SetSkyCube(g->scene, TieFlightRenderer_SelectSkyboxCube(g, curr), sky_basis, 1.0f);
 
 	/* Normalize the retained snapshot displacement to OpenXWA's 32 ms
 	 * reference frame so a configured shutter has the same exposure at every
@@ -897,7 +911,9 @@ bool TieFlightRenderer_PrepareFrame(TieFlightRenderer* g, AeronCommandBuffer* cm
 	/* Backdrop planets and billboard sprites are submitted in every render
 	 * style through the scene's SKY and OVERLAY stages. */
 	const TieFlightLegacyRenderConvention legacy_render = curr->legacy_render_convention;
-	if (g->backdrop)
+	/* A TFTC skybox paints its own planets and nebulae in place of TIE's
+	 * backdrops, as TFTC's missions drop their backdrop flight groups. */
+	if (g->backdrop && !g->tftc_skybox)
 		TieFlightBackdrop_Submit(g->backdrop, g->scene, cmd, curr, &fcam, legacy_render);
 	if (g->billboards)
 		TieFlightBillboards_Submit(g->billboards, g->scene, cmd, curr, &fcam, mb.enabled ? &mb : NULL,

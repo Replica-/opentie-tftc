@@ -16,6 +16,7 @@ add_library(tie_remaster STATIC
     flight/mesh_draw.c
     flight/scene_mesh.c
     flight/tftc_ships.c
+    flight/tftc_skybox.c
     flight/line_draw.c
     flight/render_math.c
     flight/mesh_common.c

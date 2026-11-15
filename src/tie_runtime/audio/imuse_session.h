@@ -34,6 +34,10 @@ void TieImuseSession_Close(void);
  * independently paced by the host output worker. No-op before Open. */
 void TieImuseSession_Advance(int32_t elapsed_us);
 bool TieImuseSession_SetMusicDuckingVolumePercent(int percent);
+/* The share of the music volume iMUSE's ducking leaves while a voice plays
+ * (its dipped group over its music group), 1 with no voice or before Open.
+ * Music played outside iMUSE follows it. */
+float TieImuseSession_MusicDuckGain(void);
 
 /* Filelist adapters for flight music, whose original load callback returned
  * the fmusic track id as the file handle. */

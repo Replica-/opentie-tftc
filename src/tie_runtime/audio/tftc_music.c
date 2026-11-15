@@ -4,6 +4,7 @@
 #include "aeron/audio_decode.h"
 #include "aeron/log.h"
 #include "aeron/time.h"
+#include "tie_runtime/audio/imuse_session.h"
 #include "tie_runtime/storage/storage.h"
 
 #include <math.h>
@@ -179,6 +180,7 @@ static uint64_t s_track_us;	  /* when s_voice started */
 static uint64_t s_update_us;
 static float s_duck = 1.0f;
 static float s_volume = 1.0f;
+static float s_speech_duck = 1.0f; /* iMUSE's music ducking under speech */
 static TieTftcVoice s_room;		   /* the front end music */
 static TieTftcVoice s_room_fading; /* the room music it replaced, fading out */
 static const char* s_room_file;
@@ -251,7 +253,7 @@ static void TieTftcVoice_ApplyGain(TieTftcVoice* v, uint64_t now, float duck) {
 	const float fade = elapsed >= v->fade_us
 						   ? v->fade_to
 						   : v->fade_from + (v->fade_to - v->fade_from) * (float)elapsed / (float)v->fade_us;
-	Aeron_AudioStreamSetGain(v->stream, s_volume * fade * duck);
+	Aeron_AudioStreamSetGain(v->stream, s_volume * s_speech_duck * fade * duck);
 }
 
 /* At the end of a file the voice goes on into the file queued next (a
@@ -671,6 +673,8 @@ void TieTftcMusic_Update(void) {
 	const uint64_t now = Aeron_NowUs();
 	const float step = s_update_us ? (float)(now - s_update_us) / (float)TFTC_DUCK_US : 0.0f;
 	s_update_us = now;
+	/* The Music Volume During Speech setting, as iMUSE applies it to MIDI. */
+	s_speech_duck = TieImuseSession_MusicDuckGain();
 	if (s_pending && s_pending != s_voice.track &&
 		(!s_voice.stream || s_pending >= TFTC_TRACK_FAILURE || now - s_track_us >= TFTC_HOLD_US))
 		TieTftcMusic_Switch(s_pending);

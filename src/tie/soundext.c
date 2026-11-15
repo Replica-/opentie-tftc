@@ -223,15 +223,20 @@ void soundext_Close_Sound_Scene(int16_t scene, int16_t next_scene) {
 	}
 
 #ifdef TIE_MODERN
-	/* TFTC: each screen stops the music and starts its own piece from the
-	 * beginning; resetting the script makes it set the next scene's state
-	 * even when it is the same. */
-	if (TieMusicPolicy_UsesTftc() && script_active_gbl) {
-		TieTftcMusic_PlayRoom(NULL, false);
+	/* TFTC: each screen plays its own piece from the beginning, or carries on
+	 * with the one playing when it is the same; resetting the script makes it
+	 * set the next scene's state even when that is unchanged. */
+	const bool tftc_change = TieMusicPolicy_UsesTftc() && script_active_gbl;
+	if (tftc_change) {
+		TieTftcMusic_BeginRoomChange();
 		mfscript_MfStartScript(NULL);
 	}
-#endif
 	soundext_Prep_Sound_Scene(next_scene);
+	if (tftc_change)
+		TieTftcMusic_EndRoomChange();
+#else
+	soundext_Prep_Sound_Scene(next_scene);
+#endif
 }
 
 /*

@@ -184,6 +184,7 @@ static float s_speech_duck = 1.0f; /* iMUSE's music ducking under speech */
 static TieTftcVoice s_room;		   /* the front end music */
 static TieTftcVoice s_room_fading; /* the room music it replaced, fading out */
 static const char* s_room_file;
+static bool s_room_requested; /* the new screen asked for its music */
 
 static AeronAudioDecoder* TieTftcMusic_Open(const char* dir, const char* file, int* rate) {
 	char path[96];
@@ -563,6 +564,7 @@ void TieTftcMusic_SetFailed(void) { TieTftcMusic_SetTieState(TFTC_TRACK_FAILURE)
 const char* TieTftcMusic_CurrentTune(void) { return s_voice.stream ? s_tracks[s_voice.track] : NULL; }
 
 void TieTftcMusic_PlayRoom(const char* file, bool loop) {
+	s_room_requested = true;
 	/* A piece still playing carries on; one that has ended plays again. */
 	if (file && s_room.stream && s_room_file && strcmp(file, s_room_file) == 0)
 		return;
@@ -594,6 +596,15 @@ void TieTftcMusic_PlayRoom(const char* file, bool loop) {
 	TieTftcVoice_ApplyGain(&s_room, now, 1.0f);
 	Aeron_AudioStreamPlay(s_room.stream);
 	Aeron_LogInfo("tie.music", "TFTC room music: %s", file);
+}
+
+void TieTftcMusic_BeginRoomChange(void) {
+	s_room_requested = false;
+}
+
+void TieTftcMusic_EndRoomChange(void) {
+	if (!s_room_requested)
+		TieTftcMusic_PlayRoom(NULL, false);
 }
 
 void TieTftcMusic_PauseRoom(bool paused) {

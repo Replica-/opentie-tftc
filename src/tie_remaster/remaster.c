@@ -30,6 +30,7 @@
 #include "tie_runtime/presentation/presentation.h"
 #include "tie_runtime/runtime/exports.h"
 #include "tie_runtime/runtime/profile.h"
+#include "tie_runtime/runtime/runtime.h"
 #include "tie_runtime/snapshot/snapshot.h"
 #include "tie_runtime/storage/storage.h"
 
@@ -1117,10 +1118,24 @@ void TieRemaster_RequestCapture(const char* path, float after_seconds) {
 static void TieRemaster_UpdateCapture(const TieSnapshot* snapshot) {
 	if (!g_capture.path || g_capture.done || !TieRemaster_FlightActive(snapshot))
 		return;
+	/* A --missions run captures each of its missions, timed from the frame
+	 * the mission's name first shows, to <path>-<mission>.png. */
+	const char* test_mission = TieRuntime_TestMission();
+	if (test_mission && strcmp(snapshot->mission_name, test_mission) != 0)
+		return;
 	if (!g_capture.flight_started_us)
 		g_capture.flight_started_us = Aeron_NowUs();
 	if ((float)(Aeron_NowUs() - g_capture.flight_started_us) < g_capture.after_seconds * 1e6f)
 		return;
+	char mission_path[512];
+	const char* path = g_capture.path;
+	if (test_mission) {
+		const char* dot = strrchr(g_capture.path, '.');
+		const int stem = dot ? (int)(dot - g_capture.path) : (int)strlen(g_capture.path);
+		snprintf(mission_path, sizeof mission_path, "%.*s-%s%s", stem, g_capture.path, test_mission,
+				 dot ? dot : ".png");
+		path = mission_path;
+	}
 	g_capture.done = true;
 	const int width = g_remaster.flight.target_width, height = g_remaster.flight.target_height;
 	const size_t pitch = (size_t)width * 8u;
@@ -1128,12 +1143,19 @@ static void TieRemaster_UpdateCapture(const TieSnapshot* snapshot) {
 	if (!pixels || !Aeron_ReadRenderTargetRawPixels(g_remaster.flight.present_target, pixels,
 													pitch * (size_t)height, pitch)) {
 		Aeron_LogError("tie.capture", "render-target readback failed");
-	} else if (!TieCapture_SaveRgba16F(g_capture.path, pixels, width, height)) {
-		Aeron_LogError("tie.capture", "could not write %s", g_capture.path);
+	} else if (!TieCapture_SaveRgba16F(path, pixels, width, height)) {
+		Aeron_LogError("tie.capture", "could not write %s", path);
 	} else {
-		Aeron_LogInfo("tie.capture", "saved %dx%d flight view to %s", width, height, g_capture.path);
+		Aeron_LogInfo("tie.capture", "saved %dx%d flight view to %s", width, height, path);
 	}
 	free(pixels);
+	if (test_mission && TieRuntime_TestMissionHasNext()) {
+		/* End this mission; the shell starts the next and the timer restarts. */
+		TieRuntime_EndTestMission();
+		g_capture.flight_started_us = 0;
+		g_capture.done = false;
+		return;
+	}
 	Aeron_RequestQuit();
 }
 

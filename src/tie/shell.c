@@ -37,6 +37,7 @@
 #include "tie_runtime/runtime/mainmenu_task.h"
 #include "tie_runtime/runtime/map_task.h"
 #include "tie_runtime/runtime/profile.h"
+#include "tie_runtime/runtime/runtime.h"
 #include "tie_runtime/runtime/register_task.h"
 #include "tie_runtime/runtime/shell_task.h"
 #include "tie_runtime/runtime/talk_task.h"
@@ -244,6 +245,12 @@ int32_t shell_Shell(int32_t scene, int32_t script) {
 				xstream_Init_Stream_Engine(0, 2 * 1024 * 1024, 3 * 1024 * 1024 / 2);
 				xpal_Set_Screen_RGB(0, 255, 0, 0, 0);
 				gamesnd_game_Set_Front_Sound();
+#ifdef TIE_MODERN
+				/* A --missions test run goes straight on to its next mission. */
+				if (TieRuntime_TestMission() && TieRuntime_TestMissionAdvance()) {
+					next_scene = SCENE_FLIGHT_BATTLE;
+				} else
+#endif
 				if (cur_scene == SCENE_FLIGHT_BATTLE) {
 					shipext_Mission_Exit(cur_scene, mission.player_status);
 					if (shipext_Is_Mission_Success() || !shipext_Is_Player_OK())

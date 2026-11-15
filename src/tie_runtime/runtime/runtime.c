@@ -45,6 +45,7 @@
 #include <landru/surface.h>
 #include <landru/task.h>
 
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -61,6 +62,60 @@ enum {
 	TIE_RUNTIME_MAX_ADVANCE_US = 64 * 1000,
 	TIE_RUNTIME_FRONTEND_PRESENT_US = LANDRU_VGA_RETRACE_PERIOD_US,
 };
+
+#define TIE_RUNTIME_MAX_TEST_MISSIONS 32
+
+static char s_test_mission_text[512];
+static const char* s_test_missions[TIE_RUNTIME_MAX_TEST_MISSIONS];
+static int s_test_mission_count;
+static int s_test_mission_index;
+
+static void TieRuntime_SetTestMissions(const char* list) {
+	s_test_mission_count = 0;
+	s_test_mission_index = 0;
+	if (!list)
+		return;
+	snprintf(s_test_mission_text, sizeof s_test_mission_text, "%s", list);
+	for (char* name = strtok(s_test_mission_text, ","); name && s_test_mission_count < TIE_RUNTIME_MAX_TEST_MISSIONS;
+		 name = strtok(NULL, ",")) {
+		/* shipext keeps mission names lowercase, without the extension. */
+		for (char* cursor = name; *cursor; ++cursor) {
+			*cursor = (char)tolower((unsigned char)*cursor);
+			if (*cursor == '.')
+				*cursor = '\0';
+		}
+		if (name[0])
+			s_test_missions[s_test_mission_count++] = name;
+	}
+}
+
+static void TieRuntime_SelectTestMission(void) {
+	shipext_Set_Mission_Name(s_test_missions[s_test_mission_index]);
+	shipext_Find_Mission_Ship();
+	TieDiagnostics_Log(TIE_LOG_INFO, "[SKIP] test mission %d/%d: %s\n", s_test_mission_index + 1,
+					   s_test_mission_count, s_test_missions[s_test_mission_index]);
+}
+
+const char* TieRuntime_TestMission(void) {
+	return s_test_mission_index < s_test_mission_count ? s_test_missions[s_test_mission_index] : NULL;
+}
+
+bool TieRuntime_TestMissionHasNext(void) { return s_test_mission_index + 1 < s_test_mission_count; }
+
+void TieRuntime_EndTestMission(void) {
+	/* As the replay viewer's exit (15): a status of 10 or more skips the
+	 * replay prompt and info room that wait for input. */
+	mission.end_flag = 1;
+	mission.player_status = 15;
+}
+
+bool TieRuntime_TestMissionAdvance(void) {
+	if (!TieRuntime_TestMissionHasNext())
+		return false;
+	++s_test_mission_index;
+	TieRuntime_SelectTestMission();
+	return true;
+}
 
 bool TieRuntime_Init(const TieRuntimeConfig* config, char* error, size_t error_capacity) {
 	if (!config) {
@@ -135,7 +190,11 @@ bool TieRuntime_Init(const TieRuntimeConfig* config, char* error, size_t error_c
 				pilot_record.battle_status[battle] = 1;
 				pilot_record.battle_cursor[battle] = (uint8_t)(config->skip_mission - 1);
 			}
-			shipext_Set_Tour_Battle();
+			TieRuntime_SetTestMissions(config->test_missions);
+			if (s_test_mission_count)
+				TieRuntime_SelectTestMission();
+			else
+				shipext_Set_Tour_Battle();
 			TieDiagnostics_Log(TIE_LOG_INFO, "[SKIP] pilot %s, mission %s\n", config->skip_pilot,
 							   shipext_Get_Mission_Name());
 		} else {

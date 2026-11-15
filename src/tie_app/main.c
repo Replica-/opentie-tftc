@@ -11,7 +11,7 @@ static int TieMain_Usage(const char* message, const char* argument) {
 		fprintf(stderr, "[tie-aeron] "), fprintf(stderr, message, argument), fputc('\n', stderr);
 	else if (message)
 		fprintf(stderr, "[tie-aeron] %s\n", message);
-	fprintf(stderr, "Usage: tie [--tie95-data <dir>] [--tie98-data <dir>] [--resource-root <dir>] [--skip-to-mission <pilot> [battle mission]] [--headless] [--capture <file.png> [seconds]] [--music imuse|tie98|tftc]\n");
+	fprintf(stderr, "Usage: tie [--tie95-data <dir>] [--tie98-data <dir>] [--resource-root <dir>] [--skip-to-mission <pilot> [battle mission]] [--missions <file,file...>] [--headless] [--capture <file.png> [seconds]] [--music imuse|tie98|tftc]\n");
 	return 2;
 }
 
@@ -32,6 +32,13 @@ static int TieMain_ParseOptions(int argc, char* argv[], TieLaunchOptions* out) {
 							strcmp(source, "tftc") != 0))
 				return TieMain_Usage("--music takes imuse, tie98 or tftc: %s", source ? source : "");
 			out->music = source;
+			continue;
+		}
+		if (strcmp(argument, "--missions") == 0) {
+			/* --missions <file,file...>: with --skip-to-mission, fly these missions in turn. */
+			if (index + 1 >= argc || argv[index + 1][0] == '-')
+				return TieMain_Usage("option requires mission names: %s", "--missions");
+			out->missions = argv[++index];
 			continue;
 		}
 		if (strcmp(argument, "--capture") == 0) {

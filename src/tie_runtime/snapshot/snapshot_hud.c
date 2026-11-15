@@ -9,6 +9,7 @@
 #include "tie/logbuf2.h"
 #include "tie/modelmesh.h"
 #include "tie/msg.h"
+#include "tie/msgroom.h"
 #include "tie/pai.h"
 #include "tie/panel.h"
 #include "tie/render_scene_tie98.h"
@@ -665,6 +666,39 @@ static void TieHudSnapshot_CaptureCockpit(void) {
 		hud->msg_bar.body[sizeof hud->msg_bar.body - 1] = '\0';
 	} else {
 		hud->msg_bar.present = 0;
+	}
+
+	/* The newest radio messages, oldest first, coloured as msgroom_messageroom
+	 * colours them. */
+	hud->radio_count = 0;
+	const int lines = messagehistory && lasthistorymsg >= 0
+						  ? (numhistorymsgs < TIE_HUD_RADIO_LINES ? (int)numhistorymsgs : TIE_HUD_RADIO_LINES)
+						  : 0;
+	for (int line = 0; line < lines; ++line) {
+		const int idx = ((int)lasthistorymsg - (lines - 1 - line) + 300) % 300;
+		const MsgHistoryEntry* entry = &messagehistory[idx];
+		const char* body = entry->body;
+		const uint8_t type = (uint8_t)body[0];
+		uint8_t color = 0x42;
+		if (type < 8) {
+			++body;
+			color = fontcolorconvert[type];
+			if (type == 1 && *body >= '0' && *body <= '3')
+				color = radiosidecolors[*body++ - '0'];
+			else if (type == 2 && entry->side < 6)
+				color = eventsidecolors[entry->side];
+		}
+		char* out = hud->radio[hud->radio_count].text;
+		size_t n = 0;
+		for (; *body && body < entry->body + sizeof entry->body && n + 1 < sizeof hud->radio[0].text; ++body)
+			if (*body != '[' && *body != ']')
+				out[n++] = *body;
+		out[n] = '\0';
+		hud->radio[hud->radio_count].color = color;
+		hud->radio[hud->radio_count].hours = entry->hours;
+		hud->radio[hud->radio_count].minutes = entry->minutes;
+		hud->radio[hud->radio_count].seconds = entry->seconds;
+		++hud->radio_count;
 	}
 }
 

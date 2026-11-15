@@ -476,6 +476,18 @@ TieHyperspaceState* TieSnapshotBuilder_HyperspaceMut(void) { return &s_slots[s_c
 
 void TieSnapshotBuilder_SetBattleId(uint8_t battle_id) { s_slots[s_cur].header.battle_id = battle_id; }
 
+void TieSnapshotBuilder_SetMissionName(const char* mission_path) {
+	char* out = s_slots[s_cur].header.mission_name;
+	const char* name = mission_path;
+	for (const char* cursor = mission_path; *cursor; ++cursor)
+		if (*cursor == '/' || *cursor == '\\')
+			name = cursor + 1;
+	size_t length = 0;
+	for (; name[length] && name[length] != '.' && length + 1 < sizeof s_slots[s_cur].header.mission_name; ++length)
+		out[length] = (char)tolower((unsigned char)name[length]);
+	out[length] = '\0';
+}
+
 void TieSnapshotBuilder_SetFlightScreen(TieFlightScreen screen) {
 	s_slots[s_cur].header.flight_screen = (uint8_t)screen;
 }

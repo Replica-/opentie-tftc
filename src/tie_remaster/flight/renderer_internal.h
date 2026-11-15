@@ -341,6 +341,11 @@ struct TieFlightRenderer {
 	AeronTexture* skybox_cube;
 	/* Engine glow sprite of the TFTC models (tftc_ships.c); NULL until one loads. */
 	AeronTexture* tftc_glow_texture;
+	/* The mission's TFTC skybox (tftc_skybox.c), drawn in place of skybox_cube,
+	 * the mission it was loaded for and its rotation. */
+	AeronTexture* tftc_skybox;
+	char tftc_skybox_mission[16];
+	float tftc_skybox_rotation[9];
 	int skybox_loaded_battle; /* -1 = none */
 };
 

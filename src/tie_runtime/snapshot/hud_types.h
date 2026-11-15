@@ -120,6 +120,8 @@ typedef struct TieHudInstrument {
 
 #define TIE_MAX_WEAPON_GROUPS 12
 #define TIE_HUD_REPAIR_SYSTEMS 10
+/* Radio messages kept for an XWA cockpit's messages screen. */
+#define TIE_HUD_RADIO_LINES 8
 #define TIE_HUD_OBJECTIVE_LINES 24
 
 typedef struct TieHudState {
@@ -323,6 +325,17 @@ typedef struct TieHudState {
 		 * at line_right. 1 = normal speed; 2..N = accelerated. */
 		uint8_t accelerated_time;
 	} msg_bar;
+
+	/* The newest in-flight messages of messagehistory, oldest first, as
+	 * msgroom_messageroom shows them: the text without its type prefix or
+	 * '[' / ']' colour nudges, the palette colour it picks and the mission
+	 * time. XWA cockpits show them on their radio messages screen. */
+	struct {
+		char text[70];
+		uint8_t color;
+		uint8_t hours, minutes, seconds;
+	} radio[TIE_HUD_RADIO_LINES];
+	uint8_t radio_count;
 } TieHudState;
 
 #endif

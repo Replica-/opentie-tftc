@@ -96,7 +96,7 @@ The classic (original renderer) view is disabled; `TAB` no longer switches to it
 
 OpenTIE does not ship the cockpit models. With TFTC Cockpits on, it loads XWA-format cockpit OPTs from
 `resources/cockpit3d/` next to `OpenTIE.exe`, named `TieFighterCockpit.opt`, `TieInterceptorCockpit.opt`,
-`TieBomberCockpit.opt`, `TieAdvancedX1Cockpit.opt`, `TieDefenderCockpit.opt`, `AssaultGunboatCockpit.opt` and
+`TieBomberCockpit.opt`, `TieAvengerCockpit.opt`, `TieDefenderCockpit.opt`, `AssaultGunboatCockpit.opt` and
 `MissileBoatCockpit.opt`. `tools/tftc/copy_tftc_models.sh <TFTC dir>` copies them there from a TFTC install,
 with each cockpit's `Materials` `.mat` file, whose metallic, glossiness and shadeless values the cockpit is drawn
 with, and its `DynamicCockpit` `.dc` file. A craft without a model keeps the cockpit artwork. The models are drawn only with the
@@ -151,6 +151,13 @@ metallic, glossiness and shadeless values. A model's engine glows are drawn as X
 growing with the craft's throttle (the TFTC TIE fighter model has none). Only the drawn model changes: collision, hardpoints and debris keep
 the original, and a TFTC model is drawn whole, without destroyed parts hidden or turrets turning. A model that
 cannot be built logs a warning and the original is drawn. Delete `resources/tftc/` to go back to the originals.
+
+### TFTC skyboxes
+
+The copy script also takes each mission's skybox: the cubemap TFTC's mission `.ini` names in its `[SkyBoxes]`
+section, with its faces scaled to 2048 px when `ffmpeg` is installed. Flying a mission that has one draws it as
+the sky, turned by the mission's rotation, in place of the configured skybox and TIE's backdrop planets and
+nebulae, which TFTC paints into its cubemaps.
 
 ## Smoother flight
 

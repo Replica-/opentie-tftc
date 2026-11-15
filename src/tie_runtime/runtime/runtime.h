@@ -18,6 +18,9 @@ typedef struct TieRuntimeConfig {
 	/* Optional 1-based tour battle and mission to start instead; 0 keeps the pilot's. */
 	int skip_battle;
 	int skip_mission;
+	/* Comma-separated mission files ("B6M1AW,HA1W") flown in turn after
+	 * skip_pilot loads, without the screens between them (testing). */
+	const char* test_missions;
 } TieRuntimeConfig;
 
 bool TieRuntime_Init(const TieRuntimeConfig* config, char* error, size_t error_capacity);
@@ -33,6 +36,13 @@ void TieRuntime_SetWindowActive(bool active);
 void TieRuntime_RequestSettingsMenu(void);
 bool TieRuntime_ConsumeSettingsMenuRequest(void);
 bool TieRuntime_SetMusicDuckingVolumePercent(int percent);
+
+/* The --missions test sequence: the mission being flown (NULL outside one),
+ * whether another follows, ending the current one, and moving to the next. */
+const char* TieRuntime_TestMission(void);
+bool TieRuntime_TestMissionHasNext(void);
+void TieRuntime_EndTestMission(void);
+bool TieRuntime_TestMissionAdvance(void);
 
 /* Advances one host-visible tick using the supplied synthetic-clock delta. */
 void TieRuntime_Tick(int32_t delta_us);

@@ -5,6 +5,7 @@
 #include "tie_runtime/diagnostics/diagnostics.h"
 
 #include <imuse/commands.h>
+#include <imuse/groups.h>
 #include <imuse/midi_backend.h>
 #include <limits.h>
 #include <stddef.h>
@@ -139,6 +140,16 @@ bool TieImuseSession_SetMusicDuckingVolumePercent(int percent) {
 	/* iMUSE uses a /128 fixed-point multiplier. Rounded conversion keeps the
 	 * original 37% default at its exact factor of 47. */
 	return imuse_set_music_ducking_factor(im, (percent * 128 + 50) / 100) == 0;
+}
+
+float TieImuseSession_MusicDuckGain(void) {
+	if (!im)
+		return 1.0f;
+	const int music = imuse_set_group_volume(im, IMUSE_GROUP_MUSIC, -1);
+	const int dipped = imuse_set_group_volume(im, IMUSE_GROUP_DIPPED, -1);
+	if (music <= 0 || dipped < 0 || dipped >= music)
+		return 1.0f;
+	return (float)dipped / (float)music;
 }
 
 /* The fmusic id is carried pointer-width and never dereferenced by the

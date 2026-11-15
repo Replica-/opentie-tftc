@@ -125,7 +125,7 @@ typedef struct TieFlightCockpit3dModel {
 
 static const TieFlightCockpit3dModel k_cockpit3d_models[] = {
 	{ "TIEFTR", "TieFighterCockpit" },	  { "TIEINT", "TieInterceptorCockpit" },
-	{ "TIEBMB", "TieBomberCockpit" },	  { "TIEADV", "TieAdvancedX1Cockpit" },
+	{ "TIEBMB", "TieBomberCockpit" },	  { "TIEADV", "TieAvengerCockpit" },
 	{ "TIEDLX", "TieDefenderCockpit" },	  { "GUNBT", "AssaultGunboatCockpit" },
 	{ "MISSBT", "MissileBoatCockpit" },	  { "MISSUP", "MissileBoatCockpit" },
 };

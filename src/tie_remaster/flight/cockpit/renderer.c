@@ -7,6 +7,7 @@
 #include "aeron/log.h"
 #include "aeron/render.h"
 #include "aeron/scene/draw_list2d.h"
+#include "aeron/scene/text2d.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,6 +52,9 @@
 #define TIE_COCKPIT_OBJECTIVES_INDENT 8.0f
 #define TIE_COCKPIT_OBJECTIVE_ROWS 64
 #define TIE_COCKPIT_MAX_SURFACES 32
+/* Draw records per cockpit screen: a text screen (objectives, system status)
+ * takes one per glyph. */
+#define TIE_COCKPIT_SURFACE_RECORDS 8192
 
 #define COCKPIT_MAX_CACHED 8
 #define COCKPIT_VIEW_NAME_MAX 16
@@ -149,6 +153,9 @@ struct TieCockpitRenderer {
 	const TieCockpitRendererEntry* pending_entry;
 	bool pending_ready;
 	struct TieScene2dTextRenderer* text_renderer;
+	/* The proportional font of the TFTC cockpit screens, standing in for
+	 * XWA's; unloaded leaves those screens without text. */
+	AeronFontAtlas dc_font;
 	struct TieFlightRenderer* flight_gpu; /* borrowed; for PIP pre-pass */
 	AeronDrawList2D* chrome_bake_list;
 	AeronDrawList2D* before_pip_list;
@@ -492,6 +499,10 @@ TieCockpitRenderer* TieCockpitRenderer_Init(AeronCommandBuffer* cmd, const TieFl
 	 * validation accepts the bind. */
 	cg->depth_format = AERON_TEXTURE_FORMAT_D32_FLOAT;
 	cg->text_renderer = text_renderer;
+	if (assets && assets->vfs &&
+		!AeronFontAtlas_LoadVfs(&cg->dc_font, cmd, assets->vfs, AERON_VFS_ROOT_RESOURCE, "assets/fonts/menu",
+								8u * 1024u * 1024u))
+		Aeron_LogWarn("tie.cockpit", "assets/fonts/menu could not be loaded; TFTC cockpit screens have no text");
 
 	cg->chrome_bake_list = AeronDrawList_Create(512);
 	cg->before_pip_list = AeronDrawList_Create(16384);
@@ -565,6 +576,7 @@ void TieCockpitRenderer_RequestReload(void) { s_cockpit_reload_request = true; }
 void TieCockpitRenderer_Shutdown(TieCockpitRenderer* cg) {
 	if (!cg)
 		return;
+	AeronFontAtlas_Release(&cg->dc_font);
 	for (int i = 0; i < cg->entry_count; ++i)
 		TieCockpitRenderer_ReleaseEntry(&cg->entries[i]);
 	for (int i = 0; i < cg->crt_mask_count; ++i)
@@ -3074,13 +3086,157 @@ static void TieCockpitRenderer_EndSurface(TieCockpitRenderer* cg, bool began) {
 	cg->pending_space = cg->surface_saved_space;
 }
 
-/* TFTC DC sources drawn as gauges of their own, as XWA draws them, in place
- * of the TIE instruments: the laser charge bars, the recharge strips and the
- * throttle bar. */
+/* TFTC DC sources drawn as XWA draws them, in place of the TIE instruments:
+ * the laser charge bars, the recharge strips, the throttle bar, the radio
+ * messages and mission goals boxes, the beam sphere and the speed, clock,
+ * warhead, countermeasure and shield readouts. */
 static bool TieCockpitRenderer_DcGaugeSource(TieDcSource source) {
-	return source == TIE_DC_LASERS || source == TIE_DC_LASER_POWER || source == TIE_DC_SHIELD_POWER ||
-		   source == TIE_DC_BEAM_POWER || source == TIE_DC_THROTTLE || source == TIE_DC_SHIELD_FRONT_TEXT ||
-		   source == TIE_DC_SHIELD_BACK_TEXT;
+	switch (source) {
+		case TIE_DC_LASERS:
+		case TIE_DC_LASER_POWER:
+		case TIE_DC_SHIELD_POWER:
+		case TIE_DC_BEAM_POWER:
+		case TIE_DC_THROTTLE:
+		case TIE_DC_SHIELD_FRONT_TEXT:
+		case TIE_DC_SHIELD_BACK_TEXT:
+		case TIE_DC_LEFT_TEXT:
+		case TIE_DC_RIGHT_TEXT:
+		case TIE_DC_BEAM:
+		case TIE_DC_SPEED:
+		case TIE_DC_CLOCK:
+		case TIE_DC_MISSILES:
+		case TIE_DC_CHAFF:
+			return true;
+		default:
+			return false;
+	}
+}
+
+/* Text in the TFTC screens' font: `height` px tall, `x` the anchor for
+ * `align`, `y` the top. Returns the drawn width. */
+static float TieCockpitRenderer_DcText(TieCockpitRenderer* cg, AeronDrawList2D* list, float x, float y, float height,
+									   AeronTextAlign align, const char* text, const float rgba[4],
+									   const AeronRectI* scissor) {
+	if (!cg->dc_font.loaded || !cg->dc_font.cell_h || !text[0])
+		return 0.0f;
+	const AeronTextStyle style = {
+		.font = &cg->dc_font,
+		.scale = height / (float)cg->dc_font.cell_h,
+		.tint = { rgba[0], rgba[1], rgba[2], rgba[3] },
+		.filter = AERON_BLIT2D_FILTER_LINEAR,
+	};
+	AeronText_Draw(list, &style, x, y, align, text, -1, scissor);
+	return AeronText_MeasureWidth(&style, text, -1);
+}
+
+/* A short readout centred in a w x h target, as large as fits. */
+static void TieCockpitRenderer_DcReadout(TieCockpitRenderer* cg, AeronDrawList2D* list, float w, float h,
+										 const char* text, const float rgba[4]) {
+	if (!cg->dc_font.loaded || !cg->dc_font.cell_h)
+		return;
+	const AeronTextStyle unit = { .font = &cg->dc_font, .scale = 1.0f / (float)cg->dc_font.cell_h };
+	const float width_per_px = AeronText_MeasureWidth(&unit, text, -1);
+	float height = h * 0.8f;
+	if (width_per_px > 0.0f && width_per_px * height > w * 0.9f)
+		height = w * 0.9f / width_per_px;
+	TieCockpitRenderer_DcText(cg, list, w * 0.5f, (h - height) * 0.5f, height, AERON_TEXT_CENTER, text, rgba, NULL);
+}
+
+/* A palette entry as straight RGBA, brightened toward XWA's lit screen text. */
+static void TieCockpitRenderer_DcPaletteColour(const TieSnapshot* snap, uint8_t index, float out[4]) {
+	const uint32_t c = snap->palette[index];
+	const float r = (float)((c >> 16) & 0xFFu) / 255.0f, g = (float)((c >> 8) & 0xFFu) / 255.0f,
+				b = (float)(c & 0xFFu) / 255.0f;
+	const float peak = fmaxf(fmaxf(r, g), fmaxf(b, 0.05f));
+	const float lift = peak < 0.9f ? 0.9f / peak : 1.0f;
+	out[0] = fminf(r * lift, 1.0f);
+	out[1] = fminf(g * lift, 1.0f);
+	out[2] = fminf(b * lift, 1.0f);
+	out[3] = 1.0f;
+}
+
+static const float k_dc_white[4] = { 0.95f, 0.95f, 0.95f, 1.0f };
+
+/* XWA's radio messages box: its title, then the newest messages, each after
+ * its mission time. */
+static void TieCockpitRenderer_DrawDcRadio(TieCockpitRenderer* cg, AeronDrawList2D* list, float w, float h,
+										   const TieSnapshot* snap) {
+	const float line_h = h / 14.0f, x = w * 0.05f;
+	const AeronRectI clip = { 0, 0, (int)w, (int)h };
+	TieCockpitRenderer_DcText(cg, list, x, line_h * 0.5f, line_h * 1.1f, AERON_TEXT_LEFT, "Radio Messages", k_dc_white,
+							  &clip);
+	float y = line_h * 2.0f;
+	for (int i = 0; i < snap->hud.radio_count && y + line_h <= h; ++i, y += line_h) {
+		char time[16];
+		if (snap->hud.radio[i].hours)
+			snprintf(time, sizeof time, "%u:%02u:%02u", snap->hud.radio[i].hours, snap->hud.radio[i].minutes,
+					 snap->hud.radio[i].seconds);
+		else
+			snprintf(time, sizeof time, "%u:%02u", snap->hud.radio[i].minutes, snap->hud.radio[i].seconds);
+		const float time_w = TieCockpitRenderer_DcText(cg, list, x, y, line_h, AERON_TEXT_LEFT, time, k_dc_white, &clip);
+		float colour[4];
+		TieCockpitRenderer_DcPaletteColour(snap, TieCockpitText_RemapColor(snap->hud.radio[i].color), colour);
+		TieCockpitRenderer_DcText(cg, list, x + time_w + line_h * 0.4f, y, line_h, AERON_TEXT_LEFT,
+								  snap->hud.radio[i].text, colour, &clip);
+	}
+}
+
+/* XWA's mission goals box: its title, then the goals screen's rows, each run
+ * in its own colour. */
+static void TieCockpitRenderer_DrawDcGoals(TieCockpitRenderer* cg, AeronDrawList2D* list, float w, float h,
+										   const TieSnapshot* snap) {
+	const float line_h = h / 16.0f, x = w * 0.05f;
+	const AeronRectI clip = { 0, 0, (int)w, (int)h };
+	TieCockpitRenderer_DcText(cg, list, w * 0.95f, line_h * 0.5f, line_h * 1.2f, AERON_TEXT_RIGHT, "Mission Goals",
+							  k_dc_white, &clip);
+	float y = line_h * 2.2f;
+	for (int i = 0; i < snap->hud.objective_count && y + line_h <= h; y += line_h) {
+		const int first = i;
+		/* Rows the goals screen centres are headings; goal rows indent. */
+		float pen = x + (snap->hud.objectives[first].x > 12 ? 0.0f : line_h);
+		for (; i < snap->hud.objective_count && snap->hud.objectives[i].y == snap->hud.objectives[first].y; ++i) {
+			float colour[4];
+			TieCockpitRenderer_DcPaletteColour(snap, snap->hud.objectives[i].color, colour);
+			pen += TieCockpitRenderer_DcText(cg, list, pen, y, line_h, AERON_TEXT_LEFT, snap->hud.objectives[i].text,
+											 colour, &clip);
+		}
+	}
+}
+
+/* XWA's beam display: a striped blue sphere in a red ring. */
+static void TieCockpitRenderer_DrawDcBeamSphere(AeronDrawList2D* list, float w, float h) {
+	const float r = fminf(w, h) * 0.34f, cx = w * 0.5f, cy = h * 0.5f;
+	AeronDrawList2DRRect ring = {
+		.dst_x = cx - r * 1.18f,
+		.dst_y = cy - r * 1.18f,
+		.dst_w = r * 2.36f,
+		.dst_h = r * 2.36f,
+		.radius_px = r * 1.18f,
+		.border_px = fmaxf(r * 0.12f, 1.5f),
+		.soft_px = 1.0f,
+		.border = { 0.55f * 0.9f, 0.08f * 0.9f, 0.12f * 0.9f, 0.9f },
+	};
+	AeronDrawList_AddRRect(list, &ring);
+	enum { BANDS = 7 };
+	const float band = 2.0f * r / (float)BANDS;
+	for (int i = 0; i < BANDS; ++i) {
+		const float mid = -r + band * ((float)i + 0.5f);
+		const float half = sqrtf(fmaxf(r * r - mid * mid, 0.0f));
+		const float thick = band * 0.62f;
+		/* Lit from the upper right: brighter toward the top. */
+		const float light = 0.55f + 0.45f * (1.0f - (float)i / (float)(BANDS - 1));
+		AeronDrawList2DRRect stripe = {
+			.dst_x = cx - half * 0.55f,
+			.dst_y = cy + mid - thick * 0.5f,
+			.dst_w = half * 1.5f,
+			.dst_h = thick,
+			.radius_px = thick * 0.5f,
+			.soft_px = 1.0f,
+			.fill_top = { 0.35f * light, 0.62f * light, 0.9f * light, 1.0f },
+			.fill_bottom = { 0.25f * light, 0.48f * light, 0.78f * light, 1.0f },
+		};
+		AeronDrawList_AddRRect(list, &stripe);
+	}
 }
 
 /* Front or rear shield strength, 0..200 percent (above 100 overcharged), or
@@ -3175,6 +3331,8 @@ static void TieCockpitRenderer_DcSegments(AeronDrawList2D* list, float w, float 
  * gauge stands in for it, or it belongs to a display the cockpit has no
  * screen for, which XWA leaves off the HUD too. */
 static bool TieCockpitRenderer_DcReplaces(const TieCockpitRenderer* cg, int id) {
+	if (id == TIE_HUDI_REC_LED || id == TIE_HUDI_REC_PCT)
+		return true; /* the replay recording indicator is not shown */
 	const TieDcLayout* dc = TieCockpitRenderer_DcLayout(cg);
 	const TieDcSource source = TieDcLayout_SourceOf(id);
 	if (!dc || source == TIE_DC_NONE)
@@ -3218,7 +3376,7 @@ static struct TieCockpitRendererSurface* TieCockpitRenderer_OpenDcSurface(TieCoc
 		surface->h = h;
 	}
 	if (!surface->list)
-		surface->list = AeronDrawList_Create(1024);
+		surface->list = AeronDrawList_Create(TIE_COCKPIT_SURFACE_RECORDS);
 	if (!surface->rt || !surface->list)
 		return NULL;
 	surface->group = -1;
@@ -3236,10 +3394,66 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 										   const TieCockpitRendererEntry* entry, TieDcSource source, int occurrence,
 										   const TieSnapshot* snap) {
 	const float w = (float)surface->w, h = (float)surface->h;
+	switch (source) {
+		case TIE_DC_LEFT_TEXT:
+			TieCockpitRenderer_DrawDcRadio(cg, surface->list, w, h, snap);
+			return;
+		case TIE_DC_RIGHT_TEXT:
+			TieCockpitRenderer_DrawDcGoals(cg, surface->list, w, h, snap);
+			return;
+		case TIE_DC_BEAM:
+			TieCockpitRenderer_DrawDcBeamSphere(surface->list, w, h);
+			return;
+		case TIE_DC_SPEED: {
+			/* panel_updatespeed: percent of the craft's top speed. */
+			const TieHudInstrument* ins = &snap->hud.instruments[TIE_HUDI_SPEED_DIGITS];
+			if (!TieCockpitCommon_InstrumentActive(ins) || ins->value < 0)
+				return;
+			char text[8];
+			snprintf(text, sizeof text, "%d", ins->value);
+			TieCockpitRenderer_DcReadout(cg, surface->list, w, h, text, k_dc_white);
+			return;
+		}
+		case TIE_DC_CLOCK: {
+			/* panel_updateclock: mission seconds, or the time left in training. */
+			const TieHudInstrument* ins = &snap->hud.instruments[TIE_HUDI_CLOCK_DIGITS];
+			if (ins->value < 0)
+				return;
+			char text[12];
+			snprintf(text, sizeof text, "%d:%02d", ins->value / 60, ins->value % 60);
+			TieCockpitRenderer_DcReadout(cg, surface->list, w, h, text, k_dc_white);
+			return;
+		}
+		case TIE_DC_MISSILES: {
+			/* The warheads left on the craft's left (first, third) or right
+			 * (second, fourth) launchers. */
+			int count = 0;
+			for (int i = TIE_HUDI_MISSILE_AMMO_FIRST + (occurrence & 1); i <= TIE_HUDI_MISSILE_AMMO_LAST; i += 2)
+				if (TieCockpitCommon_InstrumentActive(&snap->hud.instruments[i]) && snap->hud.instruments[i].value > 0)
+					count += snap->hud.instruments[i].value;
+			char text[8];
+			snprintf(text, sizeof text, "%d", count);
+			TieCockpitRenderer_DcReadout(cg, surface->list, w, h, text, k_dc_white);
+			return;
+		}
+		case TIE_DC_CHAFF:
+			TieCockpitRenderer_DcReadout(cg, surface->list, w, h, "0", k_dc_white);
+			return;
+		default:
+			break;
+	}
 	if (source == TIE_DC_SHIELD_FRONT_TEXT || source == TIE_DC_SHIELD_BACK_TEXT) {
-		/* "200%": the shield percentage centred, in the cockpit's small font. */
+		/* "200%": the shield percentage centred, in the screens' font. */
 		const int percent = TieCockpitRenderer_DcShieldPercent(snap, source == TIE_DC_SHIELD_FRONT_TEXT);
-		if (percent < 0 || !cg->text_renderer)
+		if (percent < 0)
+			return;
+		if (cg->dc_font.loaded) {
+			char text[8];
+			snprintf(text, sizeof text, "%d%%", percent);
+			TieCockpitRenderer_DcReadout(cg, surface->list, w, h, text, k_dc_white);
+			return;
+		}
+		if (!cg->text_renderer)
 			return;
 		char text[8];
 		snprintf(text, sizeof text, "%d%%", percent);
@@ -3265,19 +3479,30 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 		return;
 	}
 	if (source == TIE_DC_LASERS) {
-		const int groups = snap->hud.weapon_group_cnt ? snap->hud.weapon_group_cnt : 1;
-		const TieHudInstrument* ins =
-			&snap->hud.instruments[TIE_HUDI_LASER_LED_FIRST + (occurrence < groups ? occurrence : 0)];
-		if (!TieCockpitCommon_InstrumentActive(ins))
-			return;
-		/* panel_updatelasers: value = lit LEDs 0..10; color 0 = the weapon is uncharged. */
-		float charge = (float)ins->value / 10.0f;
-		charge = charge < 0.0f ? 0.0f : charge > 1.0f ? 1.0f : charge;
-		const float inset = h * 0.2f;
-		TieCockpitRenderer_DcFill(surface->list, 0.0f, inset, w, h - 2.0f * inset, 0.02f, 0.12f, 0.03f, 0.6f);
-		if (ins->color != 0)
-			TieCockpitRenderer_DcFill(surface->list, 0.0f, inset, w * charge, h - 2.0f * inset, 0.1f, 0.95f, 0.2f,
-									  1.0f);
+		/* XWA's charge bars: a segmented row per weapon group, the first
+		 * (lasers) green and the second (ion cannons) blue.
+		 * panel_updatelasers: value = lit LEDs 0..10; color 0 = uncharged. */
+		static const float k_rows[2][3] = { { 0.15f, 0.95f, 0.3f }, { 0.25f, 0.55f, 1.0f } };
+		const int groups = snap->hud.weapon_group_cnt >= 2 ? 2 : 1;
+		const float inset = h * 0.18f, row_h = (h - 2.0f * inset) / (float)groups;
+		for (int row = 0; row < groups; ++row) {
+			const TieHudInstrument* ins = &snap->hud.instruments[TIE_HUDI_LASER_LED_FIRST + row];
+			if (!TieCockpitCommon_InstrumentActive(ins))
+				continue;
+			const int lit = ins->color != 0 ? (ins->value < 0 ? 0 : ins->value > 10 ? 10 : ins->value) : 0;
+			const float y = inset + row_h * (float)row, gap = row_h * 0.2f;
+			const float step = w / 10.0f;
+			for (int i = 0; i < 10; ++i) {
+				const float* c = k_rows[row];
+				if (i < lit)
+					TieCockpitRenderer_DcFill(surface->list, step * (float)i + step * 0.12f, y + gap * 0.5f,
+											  step * 0.76f, row_h - gap, c[0], c[1], c[2], 1.0f);
+				else
+					TieCockpitRenderer_DcFill(surface->list, step * (float)i + step * 0.12f, y + gap * 0.5f,
+											  step * 0.76f, row_h - gap, c[0] * 0.08f, c[1] * 0.08f, c[2] * 0.08f,
+											  0.7f);
+			}
+		}
 		return;
 	}
 	if (source == TIE_DC_THROTTLE) {
@@ -3302,8 +3527,12 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 		level = snap->hud.beam_power;
 	else
 		level = 0; /* a system the craft lacks or has off: every segment dark */
-	static const float k_green[3] = { 0.1f, 0.9f, 0.2f }, k_yellow[3] = { 0.95f, 0.85f, 0.1f };
-	TieCockpitRenderer_DcSegments(surface->list, w, h, 4, level, 2, k_green, k_yellow);
+	/* XWA colours each system's recharge: lasers yellow, shields green,
+	 * beam magenta. */
+	static const float k_laser[3] = { 0.95f, 0.85f, 0.1f }, k_shield[3] = { 0.1f, 0.9f, 0.2f },
+					   k_beam[3] = { 0.8f, 0.2f, 0.9f };
+	const float* colour = source == TIE_DC_LASER_POWER ? k_laser : source == TIE_DC_SHIELD_POWER ? k_shield : k_beam;
+	TieCockpitRenderer_DcSegments(surface->list, w, h, 4, level, 4, colour, colour);
 }
 
 /* The targeting computer's target view, drawn into its TFTC DC screen
@@ -3349,8 +3578,10 @@ static void TieCockpitRenderer_BeginDcSurfaces(TieCockpitRenderer* cg, const Tie
 		const int occurrence = seen[dc_screen->source]++;
 		if (TieCockpitRenderer_DcGaugeSource(dc_screen->source)) {
 			const float aspect = dc_screen->aspect > 0.0f ? dc_screen->aspect : 1.0f;
-			const int w = aspect >= 1.0f ? 256 : (int)fmaxf(256.0f * aspect, 8.0f);
-			const int h = aspect >= 1.0f ? (int)fmaxf(256.0f / aspect, 8.0f) : 256;
+			const float base = dc_screen->source == TIE_DC_LEFT_TEXT || dc_screen->source == TIE_DC_RIGHT_TEXT ? 768.0f
+																											 : 256.0f;
+			const int w = aspect >= 1.0f ? (int)base : (int)fmaxf(base * aspect, 8.0f);
+			const int h = aspect >= 1.0f ? (int)fmaxf(base / aspect, 8.0f) : (int)base;
 			struct TieCockpitRendererSurface* surface = TieCockpitRenderer_OpenDcSurface(cg, s, w, h);
 			if (surface)
 				TieCockpitRenderer_DrawDcGauge(cg, surface, entry, dc_screen->source, occurrence, snap);
@@ -3466,7 +3697,7 @@ static void TieCockpitRenderer_BeginSurfaces(TieCockpitRenderer* cg, int coord_w
 			surface->h = h;
 		}
 		if (!surface->list)
-			surface->list = AeronDrawList_Create(1024);
+			surface->list = AeronDrawList_Create(TIE_COCKPIT_SURFACE_RECORDS);
 		if (!surface->rt || !surface->list)
 			continue;
 		surface->group = group;
@@ -4217,12 +4448,14 @@ static bool TieCockpitRenderer_CockpitRecordLists(TieCockpitRenderer* cg, AeronC
 												 text_bias_x, text_bias_y);
 		}
 	}
-	if (cg->editor_active[TIE_COCKPIT_EDITOR_REPAIRS_ID]) {
+	if (cg->editor_active[TIE_COCKPIT_EDITOR_REPAIRS_ID] &&
+		!TieCockpitRenderer_DcReplaces(cg, TIE_COCKPIT_EDITOR_REPAIRS_ID)) {
 		const bool on_surface = TieCockpitRenderer_BeginSurface(cg, TIE_COCKPIT_EDITOR_REPAIRS_ID);
 		TieCockpitRenderer_DrawRepairs(cg, entry, coord_w, coord_h, snap);
 		TieCockpitRenderer_EndSurface(cg, on_surface);
 	}
-	if (cg->editor_active[TIE_COCKPIT_EDITOR_OBJECTIVES_ID]) {
+	if (cg->editor_active[TIE_COCKPIT_EDITOR_OBJECTIVES_ID] &&
+		!TieCockpitRenderer_DcReplaces(cg, TIE_COCKPIT_EDITOR_OBJECTIVES_ID)) {
 		const bool on_surface = TieCockpitRenderer_BeginSurface(cg, TIE_COCKPIT_EDITOR_OBJECTIVES_ID);
 		TieCockpitRenderer_DrawObjectives(cg, entry, coord_w, coord_h, snap);
 		TieCockpitRenderer_EndSurface(cg, on_surface);

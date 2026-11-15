@@ -5,7 +5,8 @@
 # place of the original models. Each OPT and its Materials/*.mat file are
 # renamed after the TIE98 OPT they replace (TieFighter.opt -> TIEFTR.opt).
 # The 3D cockpits, with their .mat and .dc files, go to resources/cockpit3d/,
-# and the Music/*.IMC soundtrack to resources/tftc/music/.
+# the Music/*.IMC soundtrack to resources/tftc/music/, and each mission's
+# skybox cubemap to resources/tftc/skyboxes/.
 # The build stages resources/ next to OpenTIE.exe, so rebuild Debug or
 # Release after running this. The files are not redistributable and
 # resources/tftc/ is ignored by git.
@@ -18,7 +19,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then
-    sed -n '3,15p' "$0" >&2
+    sed -n '3,17p' "$0" >&2
     exit 2
 fi
 
@@ -41,7 +42,7 @@ BWING      Bwing
 TIEFTR     TieFighter
 TIEINT     TieInterceptor
 TIEBMB     TieBomber
-TIEADV     TIEAdvancedx1
+TIEADV     TieAvenger
 TIEDEL     TieDefender
 MISLBT     MissileBoat
 FGHTA      Twing
@@ -119,7 +120,7 @@ echo "copied $copied models to $out ($missing missing)"
 # Materials/*.mat, its DynamicCockpit/*.dc display layout and the craft's .ini.
 cockpits="$(dirname "$out")/cockpit3d"
 mkdir -p "$cockpits"
-for name in TieFighterCockpit TieInterceptorCockpit TieBomberCockpit TieAdvancedX1Cockpit TieDefenderCockpit \
+for name in TieFighterCockpit TieInterceptorCockpit TieBomberCockpit TieAvengerCockpit TieDefenderCockpit \
     AssaultGunboatCockpit MissileBoatCockpit; do
     opt="$(find_ci "$models" "$name.opt")"
     if [ -z "$opt" ]; then
@@ -142,4 +143,53 @@ if [ -d "$tftc/Music" ]; then
     mkdir -p "$out/music"
     cp "$tftc"/Music/*.IMC "$out/music/" 2>/dev/null || cp "$tftc"/Music/*.imc "$out/music/"
     echo "copied $(ls "$out/music" | wc -l) music files to $out/music"
+fi
+
+# Per-mission skyboxes: each TIE mission's TFTC ini (Missions/1b<B>m<M>tftc.ini)
+# names an Effects/CubeMaps cube in its [SkyBoxes] section. The section goes to
+# skyboxes/b<B>m<M>.ini and the cube's six faces to skyboxes/cubemaps/<Name>/,
+# scaled to 2048 px JPGs when ffmpeg is available (the originals are 4096 px).
+if [ -d "$tftc/Missions" ] && [ -d "$tftc/Effects/CubeMaps" ]; then
+    skyboxes="$out/skyboxes"
+    mkdir -p "$skyboxes/cubemaps"
+    have_ffmpeg=0
+    command -v ffmpeg > /dev/null 2>&1 && have_ffmpeg=1
+    missions=0
+    cubes=0
+    for ini in "$tftc"/Missions/*; do
+        base="$(basename "$ini" | tr 'A-Z' 'a-z')"
+        [[ "$base" =~ ^1(b[0-9]+m[0-9]+)tftc\.ini$ ]] || continue
+        key="${BASH_REMATCH[1]}"
+        section="$(awk '/^\[/{s=tolower($0) ~ /^\[skyboxes\]/; next} s && /^[A-Za-z]/' "$ini" | tr -d '\r')"
+        [ -n "$section" ] || continue
+        cube="$(printf '%s\n' "$section" | awk -F'=' '{k=$1; gsub(/[ \t]/,"",k)} k=="AllRegions"||k=="Region0"{v=$2; gsub(/^[ \t]+|[ \t]+$/,"",v); print v; exit}')"
+        name="$(printf '%s' "$cube" | tr '\\' '/')"
+        name="${name##*/}"
+        [ -n "$name" ] || continue
+        src="$(find "$tftc/Effects/CubeMaps" -maxdepth 1 -type d -iname "$name" -print -quit)"
+        if [ -z "$src" ]; then
+            echo "missing: cubemap $name (for $key)" >&2
+            continue
+        fi
+        printf '[SkyBoxes]\n%s\n' "$section" > "$skyboxes/$key.ini"
+        missions=$((missions + 1))
+        dest="$skyboxes/cubemaps/$name"
+        [ -d "$dest" ] && continue
+        mkdir -p "$dest"
+        # Faces end in .<face>.jpg or .png; their stem need not match the folder.
+        for face in 0 1 2 3 4 5; do
+            file="$(find "$src" -maxdepth 1 -type f \( -iname "*.$face.jpg" -o -iname "*.$face.png" \) -print -quit)"
+            if [ -z "$file" ]; then
+                echo "missing: $name face $face" >&2
+                continue
+            fi
+            if [ "$have_ffmpeg" = 1 ]; then
+                ffmpeg -loglevel error -y -i "$file" -vf "scale='min(2048,iw)':-1" -q:v 2 "$dest/$name.$face.jpg"
+            else
+                cp "$file" "$dest/$name.$face.${file##*.}"
+            fi
+        done
+        cubes=$((cubes + 1))
+    done
+    echo "copied skyboxes for $missions missions ($cubes cubemaps) to $skyboxes"
 fi

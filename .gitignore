@@ -65,3 +65,6 @@ resources/cockpit/
 # TFTC ship models copied from a TFTC install (not redistributable)
 resources/tftc/
 resources/cockpit3d/
+
+# TFTC reference screenshots for comparing cockpits (not redistributable)
+docs/tftc_reference/

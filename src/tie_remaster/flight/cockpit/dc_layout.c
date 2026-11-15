@@ -37,6 +37,7 @@ static const struct {
 	{ "THROTTLE_BAR_SRC", TIE_DC_THROTTLE },
 	{ "SHIELDS_FRONT_SRC", TIE_DC_SHIELD_FRONT_TEXT },
 	{ "SHIELDS_BACK_SRC", TIE_DC_SHIELD_BACK_TEXT },
+	{ "AUTOSIZE_CHAFF_SRC", TIE_DC_CHAFF },
 };
 
 TieDcSource TieDcLayout_SourceOf(int id) {

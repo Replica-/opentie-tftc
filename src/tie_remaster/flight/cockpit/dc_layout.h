@@ -35,6 +35,7 @@ typedef enum TieDcSource {
 	TIE_DC_SHIELD_FRONT_TEXT, /* SHIELDS_FRONT_SRC: front shield percentage */
 	TIE_DC_SHIELD_BACK_TEXT,  /* SHIELDS_BACK_SRC: rear shield percentage */
 	TIE_DC_SHIELD_BARS,       /* TIE's shield LED bars: XWA shows a ring instead, so never on a screen */
+	TIE_DC_CHAFF,             /* AUTOSIZE_CHAFF_SRC: countermeasures, which TIE craft never carry */
 	TIE_DC_SOURCE_COUNT,
 } TieDcSource;
 

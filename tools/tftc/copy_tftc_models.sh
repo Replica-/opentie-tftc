@@ -42,7 +42,7 @@ BWING      Bwing
 TIEFTR     TieFighter
 TIEINT     TieInterceptor
 TIEBMB     TieBomber
-TIEADV     TIEAdvancedx1
+TIEADV     TieAvenger
 TIEDEL     TieDefender
 MISLBT     MissileBoat
 FGHTA      Twing
@@ -120,7 +120,7 @@ echo "copied $copied models to $out ($missing missing)"
 # Materials/*.mat, its DynamicCockpit/*.dc display layout and the craft's .ini.
 cockpits="$(dirname "$out")/cockpit3d"
 mkdir -p "$cockpits"
-for name in TieFighterCockpit TieInterceptorCockpit TieBomberCockpit TieAdvancedX1Cockpit TieDefenderCockpit \
+for name in TieFighterCockpit TieInterceptorCockpit TieBomberCockpit TieAvengerCockpit TieDefenderCockpit \
     AssaultGunboatCockpit MissileBoatCockpit; do
     opt="$(find_ci "$models" "$name.opt")"
     if [ -z "$opt" ]; then

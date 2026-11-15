@@ -96,7 +96,7 @@ The classic (original renderer) view is disabled; `TAB` no longer switches to it
 
 OpenTIE does not ship the cockpit models. With TFTC Cockpits on, it loads XWA-format cockpit OPTs from
 `resources/cockpit3d/` next to `OpenTIE.exe`, named `TieFighterCockpit.opt`, `TieInterceptorCockpit.opt`,
-`TieBomberCockpit.opt`, `TieAdvancedX1Cockpit.opt`, `TieDefenderCockpit.opt`, `AssaultGunboatCockpit.opt` and
+`TieBomberCockpit.opt`, `TieAvengerCockpit.opt`, `TieDefenderCockpit.opt`, `AssaultGunboatCockpit.opt` and
 `MissileBoatCockpit.opt`. `tools/tftc/copy_tftc_models.sh <TFTC dir>` copies them there from a TFTC install,
 with each cockpit's `Materials` `.mat` file, whose metallic, glossiness and shadeless values the cockpit is drawn
 with, and its `DynamicCockpit` `.dc` file. A craft without a model keeps the cockpit artwork. The models are drawn only with the

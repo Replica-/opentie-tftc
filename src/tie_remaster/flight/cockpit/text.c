@@ -223,7 +223,12 @@ int TieCockpitText_BuildmsgBarText(const TieSnapshot* snap, int line_top, int li
 		tbuf[k++] = 'x';
 		tbuf[k] = '\0';
 
-		if (TieCockpitText_Push(out, &n, cap, (int16_t)line_right, (int16_t)line_top, tbuf, c_label))
+		/* In the bottom-right corner of the cockpit rather than at the
+		 * banner's right end. */
+		(void)line_right;
+		const bool svga = TieCockpitCommon_IsSvga(snap);
+		const int corner_x = svga ? 640 - 34 : 320 - 22, corner_y = svga ? 480 - 12 : 200 - 8;
+		if (TieCockpitText_Push(out, &n, cap, (int16_t)corner_x, (int16_t)corner_y, tbuf, c_label))
 			out[n - 1].font_id = 4;
 	}
 

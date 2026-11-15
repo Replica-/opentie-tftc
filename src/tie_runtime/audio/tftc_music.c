@@ -126,6 +126,9 @@ static const char* const s_signals[] = {
 /* The state music's gain under a small-win sting, and the time to get there. */
 #define TFTC_DUCK_GAIN 0.4f
 #define TFTC_DUCK_US 250000u
+/* The spacing of the markers a waiting sting starts on: a bar of the MIDI
+ * score at about 120 beats a minute. */
+#define TFTC_MARKER_US 2000000u
 #define TFTC_BUFFER_SECONDS 2
 #define TFTC_DECODE_FRAMES 4096
 /* The recordings start on up to 1 s of silence and end on long fades: the
@@ -174,7 +177,10 @@ typedef struct TieTftcVoice {
 
 static TieTftcVoice s_voice;  /* the current state's music */
 static TieTftcVoice s_fading; /* the state music it replaced, fading out */
-static TieTftcVoice s_sting;  /* a small-win sting over the state music */
+static TieTftcVoice s_sting;  /* a sting over the state music */
+static int s_sting_waiting = TFTC_SIGNAL_NONE; /* the sting waiting to start */
+static int s_sting_waiting_priority;
+static uint64_t s_sting_due_us; /* its marker; 0 for the playing sting's end */
 static int s_pending;		  /* the track TIE's state asks for */
 static uint64_t s_track_us;	  /* when s_voice started */
 static uint64_t s_update_us;
@@ -493,36 +499,25 @@ static int TieTftcMusic_StingFor(int tie_sequence) {
 		TFTC_SIGNAL_EJECT,
 		TFTC_SIGNAL_HYPERSPACE,
 	};
-	static int s_last_win = -1;
+	/* As fscript_ChooseDest: each Win sting plays once before any repeats. */
+	static unsigned s_wins_left;
 	if (tie_sequence < 0 || tie_sequence >= 18)
 		return TFTC_SIGNAL_NONE;
 	if (stings[tie_sequence] != TFTC_SIGNAL_WIN_1)
 		return stings[tie_sequence];
-	int win = rand() % TFTC_SIGNAL_WIN_COUNT;
-	if (win == s_last_win)
-		win = (win + 1) % TFTC_SIGNAL_WIN_COUNT;
-	s_last_win = win;
+	if (!s_wins_left)
+		s_wins_left = (1u << TFTC_SIGNAL_WIN_COUNT) - 1u;
+	int pick = rand() % __builtin_popcount(s_wins_left);
+	int win = 0;
+	for (; win < TFTC_SIGNAL_WIN_COUNT; ++win)
+		if ((s_wins_left & (1u << win)) && pick-- == 0)
+			break;
+	s_wins_left &= ~(1u << win);
 	return TFTC_SIGNAL_WIN_1 + win;
 }
 
-/* Plays `signal` over the state music unless a sting of the same or higher
- * priority (fscript.c sequencePriorities) is playing. */
-static void TieTftcMusic_PlaySting(int signal, int priority) {
-	/* As in fscript_PlaySequence and fcallbk.c: a sting arriving while one
-	 * plays waits for its end, and only a higher priority replaces the one
-	 * waiting. */
-	static int s_queued_priority;
-	if (!s_voice.stream)
-		return;
-	if (s_sting.decoder) {
-		if (s_sting.next && s_queued_priority >= priority)
-			return;
-		s_sting.next = s_signals[signal];
-		s_sting.next_dir = TFTC_SIGNALS_DIR;
-		s_queued_priority = priority;
-		Aeron_LogInfo("tie.music", "TFTC music: %s queued after %s", s_sting.next, s_sting.file);
-		return;
-	}
+/* Starts `signal` over the state music. */
+static void TieTftcMusic_StartSting(int signal) {
 	TieTftcVoice_Close(&s_sting);
 	int rate;
 	AeronAudioDecoder* decoder = TieTftcMusic_Open(TFTC_SIGNALS_DIR, s_signals[signal], &rate);
@@ -537,6 +532,43 @@ static void TieTftcMusic_PlaySting(int signal, int priority) {
 	Aeron_LogInfo("tie.music", "TFTC music: %s", s_sting.file);
 }
 
+/* fscript_PlaySequence and fcallbk.c: one sting waits for the music's next
+ * marker, where it starts; a request while one waits replaces it only with a
+ * strictly higher priority (fscript.c sequencePriorities), and is otherwise
+ * dropped. A sting that has started has no priority, so the next request
+ * waits for its end, its last marker. The recordings have no markers; a
+ * TFTC_MARKER_US grid from the state track's start stands in for them. */
+static void TieTftcMusic_PlaySting(int signal, int priority) {
+	if (!s_voice.stream)
+		return;
+	const uint64_t now = Aeron_NowUs();
+	if (s_sting_waiting != TFTC_SIGNAL_NONE) {
+		if (s_sting_waiting_priority >= priority)
+			return;
+		Aeron_LogInfo("tie.music", "TFTC music: %s replaces %s waiting", s_signals[signal],
+					  s_signals[s_sting_waiting]);
+	} else if (s_sting.stream) {
+		s_sting_due_us = 0; /* at the playing sting's end */
+		Aeron_LogInfo("tie.music", "TFTC music: %s waits for %s to end", s_signals[signal], s_sting.file);
+	} else {
+		s_sting_due_us = now + TFTC_MARKER_US - (now - s_track_us) % TFTC_MARKER_US;
+		Aeron_LogInfo("tie.music", "TFTC music: %s waits %.1f s for a marker", s_signals[signal],
+					  (double)(s_sting_due_us - now) / 1e6);
+	}
+	s_sting_waiting = signal;
+	s_sting_waiting_priority = priority;
+}
+
+/* Starts the waiting sting when its marker comes. */
+static void TieTftcMusic_UpdateWaitingSting(uint64_t now) {
+	if (s_sting_waiting == TFTC_SIGNAL_NONE || s_sting.stream || (s_sting_due_us && now < s_sting_due_us))
+		return;
+	const int signal = s_sting_waiting;
+	s_sting_waiting = TFTC_SIGNAL_NONE;
+	s_sting_waiting_priority = 0;
+	TieTftcMusic_StartSting(signal);
+}
+
 bool TieTftcMusic_Start(void) { return true; }
 
 void TieTftcMusic_Shutdown(void) {
@@ -547,6 +579,8 @@ void TieTftcMusic_Shutdown(void) {
 	TieTftcVoice_Close(&s_room_fading);
 	s_room_file = NULL;
 	s_pending = 0;
+	s_sting_waiting = TFTC_SIGNAL_NONE;
+	s_sting_waiting_priority = 0;
 }
 
 /* tie_updatemusic's states: 1 no hostile near, 2 no hostile after combat,
@@ -644,7 +678,12 @@ void TieTftcMusic_Stop(void) {
 		Aeron_LogInfo("tie.music", "TFTC music stopped");
 	TieTftcVoice_Close(&s_voice);
 	TieTftcVoice_Close(&s_fading);
-	/* A sting playing as the mission ends, like Hyperspace, plays out. */
+	/* A sting playing as the mission ends, like Hyperspace, plays out; one
+	 * still waiting for its marker starts now, with no music left to wait on. */
+	if (s_sting_waiting != TFTC_SIGNAL_NONE && !s_sting.stream) {
+		s_sting_due_us = 1;
+		TieTftcMusic_UpdateWaitingSting(Aeron_NowUs());
+	}
 	s_pending = 0;
 	s_duck = 1.0f;
 }
@@ -692,6 +731,7 @@ void TieTftcMusic_Update(void) {
 
 	if (s_sting.stream && !TieTftcVoice_Fill(&s_sting))
 		TieTftcVoice_Close(&s_sting);
+	TieTftcMusic_UpdateWaitingSting(now);
 	const float duck_target = s_sting.stream ? TFTC_DUCK_GAIN : 1.0f;
 	if (s_duck > duck_target)
 		s_duck = fmaxf(duck_target, s_duck - step * (1.0f - TFTC_DUCK_GAIN));

@@ -20,6 +20,8 @@
 #include "tie_runtime/presentation/classic_layer.h"
 #include "tie_runtime/presentation/flight_marker.h"
 #include "tie_runtime/presentation/presentation.h"
+#include "tie_app/music_overlay.h"
+#include "tie_runtime/audio/tftc_music.h"
 #include "tie_runtime/runtime/profile.h"
 #include "tie_runtime/runtime/runtime.h"
 #include "tie_runtime/snapshot/snapshot.h"
@@ -182,11 +184,15 @@ void TieFrameLoop_Run(void) {
 			audio_paused = pause_requested;
 			Aeron_LogInfo("tie", "%s", audio_paused ? "paused" : "resumed");
 		}
+		/* TFTC music streams its files from here every frame, so it keeps
+		 * playing when flight stops stepping, as in the death sequence. */
+		TieTftcMusic_Update();
 
 		TieClassicLayer_SyncInputExtent();
 		const TieSnapshot* snapshot = TieSnapshot_Current();
 		TieFrameLoop_SubmitGameLayers(&previous_output_kind, snapshot, &flight_options, delta_us,
 									  hotkey_frame.paused || menu_open);
+		TieMusicOverlay_Frame(input, (float)delta_us * 1e-6f);
 		/* Do not let the input edge that opened the menu close it again. */
 		if (!settings_opened_this_frame)
 			TieSettings_Frame(input, (float)delta_us * 1e-6f);

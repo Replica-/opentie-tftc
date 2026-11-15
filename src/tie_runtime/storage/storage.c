@@ -77,6 +77,10 @@ static bool TieStorage_Location(TieFileRoot root, AeronVfs** out_vfs, AeronVfsRo
 			*out_vfs = s_storage.application_vfs;
 			*out_root = AERON_VFS_ROOT_TEMP;
 			break;
+		case TIE_FILE_ROOT_RESOURCE:
+			*out_vfs = s_storage.application_vfs;
+			*out_root = AERON_VFS_ROOT_RESOURCE;
+			break;
 		default:
 			return false;
 	}

@@ -91,6 +91,13 @@ bool TieFlightRenderer_Cockpit3dSurfaceAt(const TieFlightRenderer* g, float x, f
  * camera-local world point to clip space, for this frame's flight camera. */
 bool TieFlightRenderer_ScreenRay(const TieFlightRenderer* g, float x, float y, float origin[3], float dir[3]);
 void TieFlightRenderer_ProjectLocal(const TieFlightRenderer* g, const float point[3], float clip[4]);
+/* The TFTC DC screens of the 3D cockpit drawn this frame, or NULL. */
+const struct TieDcLayout* TieFlightRenderer_Cockpit3dLayout(const TieFlightRenderer* g);
+/* Clip-space position of a 3D cockpit model point (metres), this frame; false
+ * when it is behind the eye. */
+bool TieFlightRenderer_Cockpit3dProject(const TieFlightRenderer* g, const float model[3], float clip[4]);
+/* Horizontal field of view of the 3D cockpit: its .dc xwahacker_fov. */
+float TieFlightCockpit3d_FovDeg(void);
 
 /* Returns the process-wide live renderer, or NULL. */
 TieFlightRenderer* TieFlightRenderer_Current(void);

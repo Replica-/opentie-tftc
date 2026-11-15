@@ -20,6 +20,7 @@
 #include "tie_runtime/audio/direct_sound.h"
 #include "tie_runtime/audio/imuse_session.h"
 #include "tie_runtime/audio/music_policy.h"
+#include "tie_runtime/audio/tftc_music.h"
 #include "tie_runtime/diagnostics/flight_trace.h"
 #include "tie_runtime/display/classic_display.h"
 #include "tie_runtime/display/palette_cycle.h"
@@ -150,6 +151,7 @@ void TieRuntime_Shutdown(void) {
 	landru_task_clear_all();
 	TieFlightScreen_Reset();
 	FrontendWaveStream_Shutdown();
+	TieTftcMusic_Shutdown();
 	TieDirectSound_Shutdown();
 	TieLandruAdapter_Shutdown();
 	if (s_tie98_display_initialized)

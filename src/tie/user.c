@@ -1880,7 +1880,7 @@ void user_inputforplane(void) {
 					hilevel_ImSetMusicVol(0);
 #if defined(TIE_MODERN) || defined(TIE98)
 #ifdef TIE_MODERN
-					if (TieMusicPolicy_UsesTie98())
+					if (TieMusicPolicy_UsesTie98() || TieMusicPolicy_UsesTftc())
 #endif
 						gamesnd_Set_CD_Volume(0);
 #endif
@@ -1889,7 +1889,7 @@ void user_inputforplane(void) {
 					hilevel_ImSetMusicVol(inflight_music_vol ? inflight_music_vol * 8 - 1 : 0);
 #if defined(TIE_MODERN) || defined(TIE98)
 #ifdef TIE_MODERN
-					if (TieMusicPolicy_UsesTie98())
+					if (TieMusicPolicy_UsesTie98() || TieMusicPolicy_UsesTftc())
 #endif
 						gamesnd_Set_CD_Volume(inflight_music_vol);
 #endif

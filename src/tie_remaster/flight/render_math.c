@@ -8,7 +8,7 @@
 #include "aeron/scene/scene3d.h"
 #include "aeron/scene/world.h"
 
-#include "tie_remaster/flight/cockpit/editor.h"
+#include "tie_remaster/flight/renderer.h"
 #include "tie_runtime/presentation/presentation.h"
 #include "tie_runtime/snapshot/snapshot.h"
 
@@ -252,8 +252,7 @@ void TieRenderMath_BuildCameraAtOrigin(TieFlightCamera* out, const struct TieCam
 	/* The 3D cockpit sets its own field of view from the craft; both axes
 	 * scale together so the aspect and reticle placement are kept. */
 	if (TiePresentation_Cockpit3d() && cam->target_obj_slot != 0xFFFF && !cam->zoom_active) {
-		float pan_x, pan_y, fov_deg;
-		TieCockpitEditor_View(&pan_x, &pan_y, &fov_deg);
+		const float fov_deg = TieFlightCockpit3d_FovDeg();
 		const float widen = tanf(fov_deg * 0.5f * 3.14159265f / 180.0f) / tan_h;
 		if (widen > 0.0f) {
 			tan_h *= widen;

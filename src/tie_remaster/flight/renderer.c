@@ -351,6 +351,10 @@ TieFlightRenderer* TieFlightRenderer_Init(int rt_w, int rt_h, AeronTextureFormat
 		.max_lod = 1000.0f,
 	});
 
+	if (g->tftc_glow_texture) {
+		Aeron_DestroyTexture(g->tftc_glow_texture);
+		g->tftc_glow_texture = NULL;
+	}
 	g->skybox_loaded_battle = -1;
 
 	/* Billboards and backdrops borrow one mission sprite cache. */

@@ -17,6 +17,7 @@ typedef enum TieFileRoot {
 	TIE_FILE_ROOT_TIE98_MEDIA,
 	TIE_FILE_ROOT_USER,
 	TIE_FILE_ROOT_TEMP,
+	TIE_FILE_ROOT_RESOURCE, /* resources/ next to the executable */
 } TieFileRoot;
 
 enum {

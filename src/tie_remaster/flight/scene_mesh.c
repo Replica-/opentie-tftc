@@ -14,6 +14,7 @@
 #include "aeron/render.h"
 #include "tie_remaster/flight/mesh_draw.h"
 #include "tie_remaster/flight/renderer_internal.h"
+#include "tie_remaster/flight/tftc_ships.h"
 #include "tie_runtime/runtime/exports.h"
 
 #include <stdio.h>
@@ -31,6 +32,8 @@ void TieFlightRenderer_ReleaseSceneSpeciesShip(TieFlightRenderer* g, TieFlightSp
 		return;
 	if (s->mesh)
 		AeronScene_MeshDestroy(s->mesh);
+	if (s->tftc_mesh)
+		AeronScene_MeshDestroy(s->tftc_mesh);
 	memset(s, 0, sizeof *s);
 }
 
@@ -76,6 +79,9 @@ bool TieFlightRenderer_EnsureSceneSpeciesShip(TieFlightRenderer* g, AeronCommand
 		return false;
 	}
 	TieFlightAssetSource_ReleaseModelRenderData(g->assets, species_idx);
+	s->tftc_mesh = TieFlightTftcShips_Load(g, cmd, species_idx);
+	if (s->tftc_mesh && s->tftc_mesh->engine_glow_count)
+		TieFlightTftcShips_EnsureGlowTexture(g, cmd);
 
 	s->ready = true;
 	Aeron_LogInfo("tie.flight", "uploaded species %u: %u vertices, %u primitives, %u materials, %u variants",

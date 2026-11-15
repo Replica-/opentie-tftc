@@ -11,7 +11,7 @@ static int TieMain_Usage(const char* message, const char* argument) {
 		fprintf(stderr, "[tie-aeron] "), fprintf(stderr, message, argument), fputc('\n', stderr);
 	else if (message)
 		fprintf(stderr, "[tie-aeron] %s\n", message);
-	fprintf(stderr, "Usage: tie [--tie95-data <dir>] [--tie98-data <dir>] [--resource-root <dir>] [--skip-to-mission <pilot>] [--headless] [--capture <file.png> [seconds]] [--cockpit-editor]\n");
+	fprintf(stderr, "Usage: tie [--tie95-data <dir>] [--tie98-data <dir>] [--resource-root <dir>] [--skip-to-mission <pilot>] [--headless] [--capture <file.png> [seconds]] [--music imuse|tie98|tftc]\n");
 	return 2;
 }
 
@@ -25,8 +25,13 @@ static int TieMain_ParseOptions(int argc, char* argv[], TieLaunchOptions* out) {
 			out->headless = true;
 			continue;
 		}
-		if (strcmp(argument, "--cockpit-editor") == 0) {
-			out->cockpit_editor = true;
+		if (strcmp(argument, "--music") == 0) {
+			/* --music <imuse|tie98|tftc>: music source for this run, not saved. */
+			const char* source = index + 1 < argc ? argv[++index] : NULL;
+			if (!source || (strcmp(source, "imuse") != 0 && strcmp(source, "tie98") != 0 &&
+							strcmp(source, "tftc") != 0))
+				return TieMain_Usage("--music takes imuse, tie98 or tftc: %s", source ? source : "");
+			out->music = source;
 			continue;
 		}
 		if (strcmp(argument, "--capture") == 0) {

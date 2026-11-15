@@ -1685,6 +1685,12 @@ int16_t tie_checkstaticobjecteyexyz(int16_t wx, int16_t wy, int16_t wz, uint16_t
 void tie_updatetime(void);
 void tie_updatemusic(void);
 void tie_updatemusic_tie98(void);
+#ifdef TIE_MODERN
+/* Last state tie_updatemusic chose (1..11), and the TIE98 CD track flight
+ * is playing (2 battle, 3 success, 4 failure; 0 none). */
+extern uint8_t lastmusicstate;
+int tie_cdmusictrack(void);
+#endif
 
 /* --------------------------------------------------------------------------
  * tie.c globals not declared above (used by tie_doframe / updatescreen).

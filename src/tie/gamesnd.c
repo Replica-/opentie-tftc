@@ -17,6 +17,9 @@
 #include "tie_runtime/runtime/exports.h"
 #include "tie_runtime/runtime/profile.h"
 #include "tie_runtime/storage/storage.h"
+#ifdef TIE_MODERN
+#include "tie_runtime/audio/tftc_music.h"
+#endif
 
 #include "landru/sound.h"
 
@@ -109,6 +112,9 @@ void gamesnd_Set_CD_Volume(int volume) {
 	if (volume > 16)
 		volume = 16;
 	cdaudio_Set_Volume((uint32_t)(0xFFFFu * (uint32_t)volume / 16u));
+#ifdef TIE_MODERN
+	TieTftcMusic_SetVolume(volume);
+#endif
 }
 
 // FUNCTION: TIE95 0x88E47

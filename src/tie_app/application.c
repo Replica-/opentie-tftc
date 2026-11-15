@@ -4,8 +4,10 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "tie_app/application.h"
+#include "tie_app/music_overlay.h"
 #include "tie_app/frame_loop.h"
 #include "tie_app/window_icon.h"
 
@@ -26,7 +28,6 @@
 #include "tie_app/setup/installation.h"
 #include "tie_app/setup/setup.h"
 #include "tie_app/ui.h"
-#include "tie_remaster/flight/cockpit/editor.h"
 #include "tie_remaster/remaster.h"
 #include "tie_runtime/flight_assets/service.h"
 #include "tie_runtime/hooks/axis_input.h"
@@ -116,6 +117,7 @@ static void TieApplication_Shutdown(AeronVfs* vfs, TieAppConfigState* config,
 	AeronWinmm_Shutdown();
 	AeronDx5_Shutdown();
 	TieInstallation_SetClose(installations);
+	TieMusicOverlay_Shutdown();
 	TieUi_Shutdown(ui);
 	TieAppConfig_Destroy(config);
 	Aeron_Shutdown();
@@ -179,6 +181,12 @@ int TieApplication_Run(const TieLaunchOptions* launch) {
 						  "Custom controller bindings were reset for configuration v5. Gamepads receive "
 						  "shipped defaults; configure HOTAS in Settings. Keyboard bindings are migrated to "
 						  "configuration v6.");
+		if (launch->music) {
+			app_config.requested.music_source = strcmp(launch->music, "tftc") == 0	? TIE_MUSIC_TFTC
+												: strcmp(launch->music, "tie98") == 0 ? TIE_MUSIC_TIE98
+																					  : TIE_MUSIC_IMUSE;
+			Aeron_LogInfo("tie.audio", "music source %s from --music", launch->music);
+		}
 		TieKeyboardMapping_Install(&app_config.requested.keyboard);
 		TieControllerMapping_SetOptions(&app_config.requested.controller);
 		TieMouseFlight_SetOptions(&app_config.requested.mouse);
@@ -279,7 +287,7 @@ int TieApplication_Run(const TieLaunchOptions* launch) {
 
 	const char* soundfont_path = NULL;
 	ImuseNukedSc55Romset* sc55_romset = NULL;
-	TieMidiBackendKind effective_midi_backend = app_config.requested.music_source == TIE_MUSIC_IMUSE
+	TieMidiBackendKind effective_midi_backend = app_config.requested.music_source != TIE_MUSIC_TIE98
 													? app_config.requested.midi_backend
 													: TIE_MIDI_BACKEND_NONE;
 	if (effective_midi_backend == TIE_MIDI_BACKEND_FLUIDSYNTH) {
@@ -411,8 +419,6 @@ int TieApplication_Run(const TieLaunchOptions* launch) {
 	};
 	if (launch->capture_path)
 		TieRemaster_RequestCapture(launch->capture_path, launch->capture_after_seconds);
-	if (launch->cockpit_editor)
-		TieCockpitEditor_RequestOpen();
 	if (!Aeron_FatalErrorRequested() && !TieRemaster_Init(startup_cmd, &remaster_config) &&
 		!Aeron_FatalErrorRequested()) {
 		Aeron_RequestFatalRendererError("remaster initialization");
@@ -425,6 +431,8 @@ int TieApplication_Run(const TieLaunchOptions* launch) {
 							  settings_error, sizeof settings_error))
 			Aeron_RequestFatalError("Settings Menu Error", settings_error);
 	}
+	if (!Aeron_FatalErrorRequested() && !TieMusicOverlay_Init(&app_ui.font))
+		Aeron_LogWarn("tie.audio", "could not create the music overlay");
 	if (startup_cmd) {
 		if (Aeron_FatalErrorRequested()) {
 			Aeron_CancelCommandBuffer(startup_cmd);

@@ -519,6 +519,8 @@ set(TIE_RUNTIME_SOURCES
     src/tie_runtime/audio/output.h
     src/tie_runtime/audio/direct_sound.c
     src/tie_runtime/audio/direct_sound.h
+    src/tie_runtime/audio/tftc_music.c
+    src/tie_runtime/audio/tftc_music.h
     src/tie_runtime/hooks/axis_input.c
     src/tie_runtime/hooks/axis_input.h
     src/tie_runtime/hooks/orientation.c
@@ -578,12 +580,33 @@ set(AERON_ENABLE_VIDEO OFF)
 set(AERON_ENABLE_AUDIO_DECODE ON)
 set(AERON_ENABLE_COMPAT ON)
 add_subdirectory(aeron)
+# Digital iMUSE ported from OpenXWA (src/xwa/audio/imuse) for TFTC's IMC
+# soundtrack. XWA_MODERN selects its portable code paths.
+add_library(tie_imuse_digital STATIC
+    src/tie_runtime/audio/imuse_digital/imcodec.c
+    src/tie_runtime/audio/imuse_digital/imgroup.c
+    src/tie_runtime/audio/imuse_digital/imhost.c
+    src/tie_runtime/audio/imuse_digital/imhost.h
+    src/tie_runtime/audio/imuse_digital/immap.c
+    src/tie_runtime/audio/imuse_digital/implayer.c
+    src/tie_runtime/audio/imuse_digital/imscript.c
+    src/tie_runtime/audio/imuse_digital/imsound.c
+    src/tie_runtime/audio/imuse_digital/imuse.c
+    src/tie_runtime/audio/imuse_digital/imuse.h)
+target_include_directories(tie_imuse_digital PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(tie_imuse_digital PUBLIC XWA_MODERN TIE_MODERN)
+target_link_libraries(tie_imuse_digital PRIVATE aeron_compat)
+if(NOT MSVC)
+    target_compile_options(tie_imuse_digital PRIVATE -fno-strict-aliasing -w)
+endif()
+
 target_link_libraries(tie_core PRIVATE
     aeron_compat
     aeron_asset
     aeron_scene
     lucas_opt
-    tie_libm)
+    tie_libm
+    tie_imuse_digital)
 
 # Compiles HLSL sources into every format in AERON_SHADER_FORMATS.
 # Stages are inferred from filename suffixes; all HLSL includes are dependencies.

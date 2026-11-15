@@ -5,6 +5,7 @@
 #include "tie_runtime/audio/config.h"
 #include "tie_runtime/audio/imuse_api.h"
 #include "tie_runtime/audio/music_policy.h"
+#include "tie_runtime/audio/tftc_music.h"
 #include "tie_runtime/diagnostics/diagnostics.h"
 #include "tie_runtime/display/classic_display.h"
 #include "tie_runtime/display/classic_framebuffer.h"
@@ -137,7 +138,8 @@ static void soundext_Find_Sound_Range(int16_t scene, int16_t* pstart, int16_t* p
 void soundext_Open_Post_iMuse(int16_t use_script) {
 	void* fp;
 
-	script_active_gbl = use_script && TieMusicPolicy_UsesImuse();
+	/* With TFTC the script picks the recording to play (mfscript.c). */
+	script_active_gbl = use_script && (TieMusicPolicy_UsesImuse() || TieMusicPolicy_UsesTftc());
 	xmemcom_Add_Memory_Callback(soundext_compact_Sound, 0x1000);
 	/* Adapt the recovered usercall callback to Landru's function type. */
 	xsound_Set_Sound_Action_Function((SoundActionFunc)(void*)soundext_Action_iMuse);
@@ -220,6 +222,15 @@ void soundext_Close_Sound_Scene(int16_t scene, int16_t next_scene) {
 		}
 	}
 
+#ifdef TIE_MODERN
+	/* TFTC: each screen stops the music and starts its own piece from the
+	 * beginning; resetting the script makes it set the next scene's state
+	 * even when it is the same. */
+	if (TieMusicPolicy_UsesTftc() && script_active_gbl) {
+		TieTftcMusic_PlayRoom(NULL, false);
+		mfscript_MfStartScript(NULL);
+	}
+#endif
 	soundext_Prep_Sound_Scene(next_scene);
 }
 
@@ -450,6 +461,8 @@ void soundext_Action_iMuse(int16_t state, Sound* the_sound, int16_t var1, int16_
 #ifdef TIE_MODERN
 			if (TieMusicPolicy_UsesTie98())
 				FrontendWaveStream_Pause();
+			if (TieMusicPolicy_UsesTftc())
+				TieTftcMusic_PauseRoom(true);
 #endif
 			lolevel_ImPause();
 			group_vol_gbl = lolevel_ImSetGroupVol(IMUSE_GROUP_MASTER, 0);
@@ -460,6 +473,8 @@ void soundext_Action_iMuse(int16_t state, Sound* the_sound, int16_t var1, int16_
 #ifdef TIE_MODERN
 			if (TieMusicPolicy_UsesTie98())
 				FrontendWaveStream_Resume();
+			if (TieMusicPolicy_UsesTftc())
+				TieTftcMusic_PauseRoom(false);
 #endif
 			break;
 		case 3:

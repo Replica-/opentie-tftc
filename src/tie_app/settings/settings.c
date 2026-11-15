@@ -223,7 +223,7 @@ static bool TieSettings_PersistAudioOptions(const TieAppLiveAudioOptions* option
 
 static bool TieSettings_PersistLaunchOptions(const TieAppLaunchOptions* options, void* user, char* error,
 											 size_t error_capacity) {
-	if (options->music_source == TIE_MUSIC_IMUSE) {
+	if (options->music_source != TIE_MUSIC_TIE98) {
 		if (options->midi_backend == TIE_MIDI_BACKEND_FLUIDSYNTH &&
 			!TieMidiResources_Soundfontvalidate(options->fluidsynth_soundfont_file, error, error_capacity))
 			return false;
@@ -764,7 +764,8 @@ static void TieSettings_MousePage(AeronUiContext* ui) {
 }
 
 static void TieSettings_AudioPage(AeronUiContext* ui) {
-	static const char* const music_sources[] = { "iMUSE", "CD Music" };
+	static const char* const music_sources[] = { "iMUSE", "CD Music", "TFTC" };
+	static const TieMusicSource music_source_kinds_all[] = { TIE_MUSIC_IMUSE, TIE_MUSIC_TIE98, TIE_MUSIC_TFTC };
 	static const TieMidiBackendChoice all_midi_backends[] = {
 		{ "FluidSynth", TIE_MIDI_BACKEND_FLUIDSYNTH },
 		{ "OPL3", TIE_MIDI_BACKEND_FM4_OPL3 },
@@ -810,18 +811,28 @@ static void TieSettings_AudioPage(AeronUiContext* ui) {
 	}
 	AeronUi_Spacer(ui, 8.0f);
 	AeronUi_Header(ui, "Music");
-	int music_source = launch.music_source == TIE_MUSIC_TIE98 ? 1 : 0;
-	const int music_source_count = g_settings.has_tie98 ? 2 : 1;
-	if (music_source >= music_source_count) {
+	const char* music_source_labels[3];
+	TieMusicSource music_source_kinds[3];
+	int music_source_count = 0;
+	int music_source = -1;
+	for (int index = 0; index < 3; ++index) {
+		if (music_source_kinds_all[index] == TIE_MUSIC_TIE98 && !g_settings.has_tie98)
+			continue;
+		if (launch.music_source == music_source_kinds_all[index])
+			music_source = music_source_count;
+		music_source_labels[music_source_count] = music_sources[index];
+		music_source_kinds[music_source_count++] = music_source_kinds_all[index];
+	}
+	if (music_source < 0) {
 		music_source = 0;
 		launch.music_source = TIE_MUSIC_IMUSE;
 		launch_changed = true;
 	}
-	if (AeronUi_Selector(ui, "Music Source", &music_source, music_sources, music_source_count)) {
-		launch.music_source = music_source == 1 ? TIE_MUSIC_TIE98 : TIE_MUSIC_IMUSE;
+	if (AeronUi_Selector(ui, "Music Source", &music_source, music_source_labels, music_source_count)) {
+		launch.music_source = music_source_kinds[music_source];
 		launch_changed = true;
 	}
-	if (launch.music_source == TIE_MUSIC_IMUSE) {
+	if (launch.music_source != TIE_MUSIC_TIE98) {
 		const char* midi_backend_labels[3];
 		TieMidiBackendKind midi_backend_kinds[3];
 		int midi_backend_count = 0;

@@ -15,6 +15,9 @@ typedef struct TieRuntimeConfig {
 	/* Developer shortcut: load this pilot and start its current tour battle mission. */
 	bool skip_to_mission;
 	const char* skip_pilot;
+	/* Optional 1-based tour battle and mission to start instead; 0 keeps the pilot's. */
+	int skip_battle;
+	int skip_mission;
 } TieRuntimeConfig;
 
 bool TieRuntime_Init(const TieRuntimeConfig* config, char* error, size_t error_capacity);

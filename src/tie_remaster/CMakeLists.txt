@@ -11,9 +11,11 @@ add_library(tie_remaster STATIC
     flight/renderer.c
     flight/classic_draw.c
     flight/cockpit3d.c
+    flight/cockpit/dc_layout.c
     flight/cockpit/editor.c
     flight/mesh_draw.c
     flight/scene_mesh.c
+    flight/tftc_ships.c
     flight/line_draw.c
     flight/render_math.c
     flight/mesh_common.c

@@ -1,6 +1,10 @@
 #include "tie/mfscript.h"
 #include "tie_runtime/audio/imuse_api.h"
 #include "tie_runtime/audio/imuse_session.h"
+#ifdef TIE_MODERN
+#include "tie_runtime/audio/music_policy.h"
+#include "tie_runtime/audio/tftc_music.h"
+#endif
 
 #include <imuse/filelist.h>
 #include <imuse/lolevel.h>
@@ -472,6 +476,99 @@ static void mfscript_ChgJumpMrk(intptr_t sound1, intptr_t sound2, int16_t jumpHo
 static void mfscript_ChgJumpOnBeat(intptr_t sound1, intptr_t sound2, int16_t endChunk, int16_t marker,
 								   int16_t jumpHook2);
 
+#ifdef TIE_MODERN
+/* TFTC's recordings of the menu music, by soundNames index. A recording
+ * plays from its start; the script's cue changes within one piece have no
+ * counterpart in it, and a file already playing carries on. Pieces without
+ * a recording (drone, perelogo, awe, evilmonk, the cutscene pieces) are
+ * silent. */
+static const char* mfscript_TftcFile(int nameIndex) {
+	switch (nameIndex) {
+		case 2: /* POINK, the LucasArts logo */
+			return "songs/01. Startup.flac";
+		case 3: /* title, tocity and battle: the opening */
+		case 4:
+		case 5:
+			return "songs/02. Main Theme and Introduction.flac";
+		case 6: /* stately */
+			return "rooms/03. Tech Room.flac";
+		case 7:
+			return "rooms/04. Bridge.flac";
+		case 8: /* briefmap */
+			return "songs/09. Battle Briefing.flac";
+		case 9:
+			return "songs/08. Secret Order.flac";
+		case 10:
+			return "songs/10. Launch.flac";
+		case 12:
+			return "rooms/01. Register.flac";
+		case 13: /* mainmen */
+			return "rooms/02. Main Concourse.flac";
+		case 14:
+			return "songs/17. Reporting to the Emperor.flac";
+		case 15: /* phew: the pod and debriefing rooms */
+			return "songs/04. Pilot Room.flac";
+		case 16:
+			return "songs/05. Training Simulator.flac";
+		case 17:
+			return "songs/06. Combat Chamber.flac";
+		case 19: /* fightmap */
+			return "songs/07. Combat Briefing.flac";
+		case 20:
+			return "songs/14. Medals.flac";
+		case 26: /* starlog: captured */
+			return "songs/12. Imprisonment.flac";
+		case 28:
+			return "songs/15. Medical Capsule.flac";
+		case 29:
+			return "songs/16. Funeral.flac";
+		case 31: /* bummer */
+			return "songs/18. Mission Failure.flac";
+		default:
+			return NULL;
+	}
+}
+
+/* The TFTC soundtrack stands in for the script's MIDI: only which piece is
+ * current matters. */
+static int16_t mfscript_TftcSetState(int16_t state) {
+	if (state == -1 || state == currentState)
+		return currentState;
+	currentState = state;
+	if (!currentSequence)
+		TieTftcMusic_PlayRoom(state < NUM_STATES ? mfscript_TftcFile(stateRefs[state].nameIndex) : NULL, true);
+	return state;
+}
+
+static int16_t mfscript_TftcSetCuePoint(int16_t cuePoint) {
+	if (cuePoint == -1 || !currentSequence || cuePoint == currentCuePoint)
+		return currentCuePoint;
+	CueRef* sqp = mfscript_GetSequence();
+	if (!sqp)
+		return currentCuePoint;
+	currentCuePoint = cuePoint;
+	TieTftcMusic_PlayRoom(mfscript_TftcFile(sqp[cuePoint].nameIndex), false);
+	return cuePoint;
+}
+
+static int16_t mfscript_TftcSetSequence(int16_t sequence) {
+	if (sequence == -1 || sequence == currentSequence)
+		return currentSequence;
+	if (sequence) {
+		currentSequence = sequence;
+		currentCuePoint = -1;
+		mfscript_TftcSetCuePoint(0);
+	} else if (currentSequence) {
+		currentSequence = 0;
+		currentCuePoint = -1;
+		TieTftcMusic_PlayRoom(currentState < NUM_STATES ? mfscript_TftcFile(stateRefs[currentState].nameIndex)
+														: NULL,
+							 true);
+	}
+	return currentSequence;
+}
+#endif
+
 /* --- Public API --- */
 
 // FUNCTION: TIE95 0x87BE0
@@ -489,6 +586,10 @@ int16_t mfscript_MfStartScript(void* idp) {
 
 // FUNCTION: TIE95 0x87C28
 int16_t mfscript_MfStopScript(void) {
+#ifdef TIE_MODERN
+	if (TieMusicPolicy_UsesTftc())
+		TieTftcMusic_PlayRoom(NULL, false);
+#endif
 	lolevel_ImPrintf("Stop script!...");
 	lolevel_ImStopAllSounds();
 	filelist_ImUnloadAll();
@@ -507,6 +608,10 @@ int16_t mfscript_MfSetState(int16_t state) {
 	ChangeRef* cgp;
 	int i;
 
+#ifdef TIE_MODERN
+	if (TieMusicPolicy_UsesTftc())
+		return mfscript_TftcSetState(state);
+#endif
 	if (state == -1 || state == currentState)
 		return currentState;
 
@@ -553,6 +658,10 @@ int16_t mfscript_MfSetSequence(int16_t sequence) {
 	StateRef* srp;
 	int16_t newState = 0;
 
+#ifdef TIE_MODERN
+	if (TieMusicPolicy_UsesTftc())
+		return mfscript_TftcSetSequence(sequence);
+#endif
 	if (sequence == -1 || sequence == currentSequence)
 		return currentSequence;
 
@@ -606,6 +715,10 @@ int16_t mfscript_MfSetCuePoint(int16_t cuePoint) {
 	intptr_t sound;
 	int i;
 
+#ifdef TIE_MODERN
+	if (TieMusicPolicy_UsesTftc())
+		return mfscript_TftcSetCuePoint(cuePoint);
+#endif
 	if (cuePoint == -1 || !currentSequence)
 		return currentCuePoint;
 

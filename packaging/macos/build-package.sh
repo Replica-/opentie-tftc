@@ -198,7 +198,9 @@ build_dependencies() {
             --disable-network \
             --disable-programs \
             --disable-static \
+            --enable-decoder=flac \
             --enable-decoder=vorbis \
+            --enable-demuxer=flac \
             --enable-demuxer=ogg \
             --enable-pic \
             --enable-pthreads \

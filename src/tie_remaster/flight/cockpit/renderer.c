@@ -21,6 +21,7 @@
 #include "tie_formats/cockpit_masks.h"
 #include "tie_formats/panel.h"
 #include "tie_remaster/flight/cockpit/common.h"
+#include "tie_remaster/flight/cockpit/dc_layout.h"
 #include "tie_remaster/flight/cockpit/editor.h"
 #include "tie_remaster/flight/cockpit/layout.h"
 #include "tie_remaster/flight/cockpit/text.h"
@@ -49,7 +50,7 @@
 #define TIE_COCKPIT_OBJECTIVES_LINE_H 11.0f
 #define TIE_COCKPIT_OBJECTIVES_INDENT 8.0f
 #define TIE_COCKPIT_OBJECTIVE_ROWS 64
-#define TIE_COCKPIT_MAX_SURFACES 8
+#define TIE_COCKPIT_MAX_SURFACES 32
 
 #define COCKPIT_MAX_CACHED 8
 #define COCKPIT_VIEW_NAME_MAX 16
@@ -202,6 +203,7 @@ struct TieCockpitRenderer {
 		int w, h;
 		AeronDrawList2D* list;
 		float x0, y0, x1, y1; /* group box, cockpit px */
+		int screen; /* TFTC DC screen it is drawn on, -1 = an editor group */
 		TieCockpitRendererDrawSpace space;
 		bool live; /* recorded this frame */
 	} surfaces[TIE_COCKPIT_MAX_SURFACES];
@@ -2844,6 +2846,7 @@ static bool TieCockpitRenderer_ViewAllowsWidget(uint8_t view_idx, int idx,
 /* Surface targets (defined with the cockpit text helpers below). */
 static bool TieCockpitRenderer_BeginSurface(TieCockpitRenderer* cg, int id);
 static void TieCockpitRenderer_EndSurface(TieCockpitRenderer* cg, bool began);
+static bool TieCockpitRenderer_DcReplaces(const TieCockpitRenderer* cg, int id);
 
 static void TieCockpitRenderer_DrawWidgetsForView(TieCockpitRenderer* cg, AeronCommandBuffer* cmd,
 												  AeronRenderPass* pass, const TieCockpitRendererEntry* entry,
@@ -2862,7 +2865,7 @@ static void TieCockpitRenderer_DrawWidgetsForView(TieCockpitRenderer* cg, AeronC
 		if (!TieCockpitCommon_InstrumentActive(ins))
 			continue;
 		TieCockpitRendererHudWidgetKind kind = (TieCockpitRendererHudWidgetKind)hud_widget_kind[idx];
-		if (!TieCockpitRenderer_ViewAllowsWidget(v, idx, kind))
+		if (!TieCockpitRenderer_ViewAllowsWidget(v, idx, kind) || TieCockpitRenderer_DcReplaces(cg, idx))
 			continue;
 
 		float scale_x, scale_y, angle_deg;
@@ -2932,10 +2935,9 @@ bool TieCockpitRenderer_Prepare(TieCockpitRenderer* cg, AeronCommandBuffer* cmd,
 	if (!cmd || !snap)
 		return false;
 	const bool flight = snap->scene_kind == TIE_SCENE_FLIGHT && snap->replay_mode != 2;
-	TieCockpitEditor_UseModel(cg->assets ? cg->assets->vfs : NULL,
-							  flight && cg->flight_gpu ? TieFlightRenderer_Cockpit3dModel(cg->flight_gpu) : NULL,
-							  /* Past the camera's first-frame jump, which motion blur would hold. */
-							  snap->flight_frame >= 8, snap->hud.target_obj_slot != 0xFFFF);
+	/* The cockpit editor is disabled: TFTC cockpits take their HUD layout
+	 * from their DynamicCockpit .dc files (dc_layout.c). */
+	TieCockpitEditor_UseModel(NULL, NULL, false, false);
 	if (!flight)
 		return true;
 
@@ -3029,7 +3031,20 @@ static bool TieCockpitRenderer_FlightHudRecordLists(TieCockpitRenderer* cg, Aero
 	return ok;
 }
 
+static const TieDcLayout* TieCockpitRenderer_DcLayout(const TieCockpitRenderer* cg) {
+	return cg->flight_gpu ? TieFlightRenderer_Cockpit3dLayout(cg->flight_gpu) : NULL;
+}
+
 static struct TieCockpitRendererSurface* TieCockpitRenderer_SurfaceFor(TieCockpitRenderer* cg, int id) {
+	const TieDcLayout* dc = TieCockpitRenderer_DcLayout(cg);
+	if (dc) {
+		const TieDcSource source = TieDcLayout_SourceOf(id);
+		for (int i = 0; i < TIE_COCKPIT_MAX_SURFACES && source != TIE_DC_NONE; ++i)
+			if (cg->surfaces[i].live && cg->surfaces[i].screen >= 0 &&
+				dc->screens[cg->surfaces[i].screen].source == source)
+				return &cg->surfaces[i];
+		return NULL;
+	}
 	if (!TieCockpitEditor_Surface(id))
 		return NULL;
 	const int group = TieCockpitEditor_Group(id);
@@ -3059,13 +3074,354 @@ static void TieCockpitRenderer_EndSurface(TieCockpitRenderer* cg, bool began) {
 	cg->pending_space = cg->surface_saved_space;
 }
 
+/* TFTC DC sources drawn as gauges of their own, as XWA draws them, in place
+ * of the TIE instruments: the laser charge bars, the recharge strips and the
+ * throttle bar. */
+static bool TieCockpitRenderer_DcGaugeSource(TieDcSource source) {
+	return source == TIE_DC_LASERS || source == TIE_DC_LASER_POWER || source == TIE_DC_SHIELD_POWER ||
+		   source == TIE_DC_BEAM_POWER || source == TIE_DC_THROTTLE || source == TIE_DC_SHIELD_FRONT_TEXT ||
+		   source == TIE_DC_SHIELD_BACK_TEXT;
+}
+
+/* Front or rear shield strength, 0..200 percent (above 100 overcharged), or
+ * -1 for a craft without shields or with them down (status flag 0x01, which
+ * panel_updateshields also tests; the TIE fighter's never come up). It
+ * paints each bar's normal and overcharge rows with shieldcolor[lit LEDs
+ * 0..9] (10 flashes). */
+static int TieCockpitRenderer_DcShieldPercent(const TieSnapshot* snap, bool front) {
+	static const uint8_t k_shieldcolor[11] = { 0x2C, 0x35, 0x36, 0x37, 0x39, 0x3A, 0x3B, 0x3D, 0x3E, 0x3F, 0x2F };
+	if (!(snap->hud.working_subsystems & 0x20u) || !(snap->hud.status_flags & 0x01u))
+		return -1;
+	int leds[2] = { 0, 0 };
+	const int ids[2] = { front ? TIE_HUDI_SHIELD_FWD_NORMAL : TIE_HUDI_SHIELD_REAR_NORMAL,
+						 front ? TIE_HUDI_SHIELD_FWD_OVER : TIE_HUDI_SHIELD_REAR_OVER };
+	for (int row = 0; row < 2; ++row) {
+		const uint8_t colour = (uint8_t)snap->hud.instruments[ids[row]].value;
+		for (int i = 0; i < 11; ++i)
+			if (k_shieldcolor[i] == colour)
+				leds[row] = i > 9 ? 9 : i;
+	}
+	if (leds[1] > 0)
+		leds[0] = 9;
+	return (leds[0] + leds[1]) * 100 / 9;
+}
+
+/* XWA's shield colours by strength: dark, red, yellow, green, cyan when overcharged. */
+static void TieCockpitRenderer_DcShieldColour(int percent, float out[4]) {
+	const float dark[4] = { 0.05f, 0.12f, 0.06f, 0.6f }, red[4] = { 0.95f, 0.2f, 0.15f, 1.0f },
+				yellow[4] = { 0.95f, 0.85f, 0.1f, 1.0f }, green[4] = { 0.1f, 0.9f, 0.25f, 1.0f },
+				cyan[4] = { 0.3f, 0.9f, 1.0f, 1.0f };
+	const float* c = percent <= 0 ? dark : percent < 25 ? red : percent < 50 ? yellow : percent <= 100 ? green : cyan;
+	memcpy(out, c, sizeof dark);
+}
+
+/* The shield ring around the craft on the shields screen: its top half the
+ * front shield, its bottom half the rear, dark on a craft without shields. */
+static void TieCockpitRenderer_DrawDcShieldRing(const struct TieCockpitRendererSurface* surface,
+												const TieSnapshot* snap) {
+	const float w = (float)surface->w, h = (float)surface->h;
+	const float size = fminf(w, h) * 0.8f, x = (w - size) * 0.5f, y = (h - size) * 0.5f;
+	for (int half = 0; half < 2; ++half) {
+		float colour[4];
+		TieCockpitRenderer_DcShieldColour(TieCockpitRenderer_DcShieldPercent(snap, half == 0), colour);
+		AeronDrawList2DRRect ring = {
+			.dst_x = x,
+			.dst_y = y,
+			.dst_w = size,
+			.dst_h = size,
+			.radius_px = size * 0.5f,
+			.border_px = fmaxf(size * 0.06f, 2.0f),
+			.soft_px = 1.0f,
+			.border = { colour[0] * colour[3], colour[1] * colour[3], colour[2] * colour[3], colour[3] },
+			.scissor = { 0, half ? (int)(h * 0.5f) + 1 : 0, (int)w, (int)(h * 0.5f) - 1 },
+		};
+		AeronDrawList_AddRRect(surface->list, &ring);
+	}
+}
+
+static void TieCockpitRenderer_DcFill(AeronDrawList2D* list, float x, float y, float w, float h, float r, float g,
+									  float b, float a) {
+	AeronDrawList2DRRect rect = {
+		.dst_x = x,
+		.dst_y = y,
+		.dst_w = w,
+		.dst_h = h,
+		.soft_px = 1.0f,
+		.fill_top = { r * a, g * a, b * a, a },
+		.fill_bottom = { r * a, g * a, b * a, a },
+	};
+	AeronDrawList_AddRRect(list, &rect);
+}
+
+/* `lit` of `segments` blocks along the longer side of a gauge target, from
+ * the left or the bottom; `split` and above take the second colour. */
+static void TieCockpitRenderer_DcSegments(AeronDrawList2D* list, float w, float h, int segments, int lit, int split,
+										  const float first[3], const float second[3]) {
+	const bool along_x = w >= h;
+	const float length = along_x ? w : h, gap = length * 0.04f, step = (length + gap) / (float)segments;
+	for (int i = 0; i < segments; ++i) {
+		const float at = along_x ? (float)i * step : h - (float)(i + 1) * step + gap;
+		const float x = along_x ? at : 0.0f, y = along_x ? 0.0f : at;
+		const float sw = along_x ? step - gap : w, sh = along_x ? h : step - gap;
+		const float* colour = i < split ? first : second;
+		if (i < lit)
+			TieCockpitRenderer_DcFill(list, x, y, sw, sh, colour[0], colour[1], colour[2], 1.0f);
+		else
+			TieCockpitRenderer_DcFill(list, x, y, sw, sh, 0.02f, 0.06f, 0.03f, 0.95f);
+	}
+}
+
+/* True when instrument `id` is not drawn as itself on this cockpit: a DC
+ * gauge stands in for it, or it belongs to a display the cockpit has no
+ * screen for, which XWA leaves off the HUD too. */
+static bool TieCockpitRenderer_DcReplaces(const TieCockpitRenderer* cg, int id) {
+	const TieDcLayout* dc = TieCockpitRenderer_DcLayout(cg);
+	const TieDcSource source = TieDcLayout_SourceOf(id);
+	if (!dc || source == TIE_DC_NONE)
+		return false;
+	if (TieCockpitRenderer_DcGaugeSource(source))
+		return true;
+	for (int s = 0; s < dc->count; ++s)
+		if (dc->screens[s].source == source)
+			return false;
+	return true;
+}
+
+/* Displays of a few characters (XWA's AUTOSIZE_* sources): their screens
+ * hug the text so it fills them. */
+static bool TieCockpitRenderer_DcTextSource(TieDcSource source) {
+	return source == TIE_DC_SPEED || source == TIE_DC_CLOCK || source == TIE_DC_THROTTLE;
+}
+
+/* A free surface target of w x h px for DC screen `s`, cleared and live. */
+static struct TieCockpitRendererSurface* TieCockpitRenderer_OpenDcSurface(TieCockpitRenderer* cg, int s, int w,
+																		  int h) {
+	struct TieCockpitRendererSurface* surface = NULL;
+	for (int i = 0; i < TIE_COCKPIT_MAX_SURFACES && !surface; ++i)
+		if (!cg->surfaces[i].live && (cg->surfaces[i].screen == s || !cg->surfaces[i].rt))
+			surface = &cg->surfaces[i];
+	for (int i = 0; i < TIE_COCKPIT_MAX_SURFACES && !surface; ++i)
+		if (!cg->surfaces[i].live)
+			surface = &cg->surfaces[i];
+	if (!surface)
+		return NULL;
+	if (!surface->rt || surface->w != w || surface->h != h) {
+		if (surface->rt)
+			Aeron_DestroyRenderTarget(surface->rt);
+		surface->rt = Aeron_CreateRenderTarget(&(AeronRenderTargetDesc) {
+			.width = w,
+			.height = h,
+			.format = COCKPIT_CHROME_FORMAT,
+			.sample_count = AERON_SAMPLE_COUNT_1,
+		});
+		surface->w = w;
+		surface->h = h;
+	}
+	if (!surface->list)
+		surface->list = AeronDrawList_Create(1024);
+	if (!surface->rt || !surface->list)
+		return NULL;
+	surface->group = -1;
+	surface->screen = s;
+	static const float clear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	AeronDrawList_Begin(surface->list, surface->rt, w, h, AERON_DRAWLIST2D_CLEAR, clear);
+	surface->live = true;
+	return surface;
+}
+
+/* Draws a DC gauge across its whole target, left to right along the
+ * display. `occurrence` counts earlier screens of the source: the second
+ * laser bar shows the second weapon group when the craft has one. */
+static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct TieCockpitRendererSurface* surface,
+										   const TieCockpitRendererEntry* entry, TieDcSource source, int occurrence,
+										   const TieSnapshot* snap) {
+	const float w = (float)surface->w, h = (float)surface->h;
+	if (source == TIE_DC_SHIELD_FRONT_TEXT || source == TIE_DC_SHIELD_BACK_TEXT) {
+		/* "200%": the shield percentage centred, in the cockpit's small font. */
+		const int percent = TieCockpitRenderer_DcShieldPercent(snap, source == TIE_DC_SHIELD_FRONT_TEXT);
+		if (percent < 0 || !cg->text_renderer)
+			return;
+		char text[8];
+		snprintf(text, sizeof text, "%d%%", percent);
+		TieUIText rec[1];
+		int count = 0;
+		if (!TieCockpitText_Push(rec, &count, 1, 0, 0, text, TieCockpitText_RemapColor(0x3F)))
+			return;
+		/* About 5 x 7 px a character in the 640 x 480 frame. */
+		const float text_w = 5.0f * (float)strlen(text), text_h = 7.0f;
+		const float k = fminf(w / text_w, h / text_h) * 0.85f;
+		const float atlas_scale = TieCockpitRenderer_CockpitAtlasScaleFor(entry, 480);
+		const TieScene2dTextSpace text_space = {
+			.classic_w = 640,
+			.classic_h = 480,
+			.atlas_scale_x = atlas_scale,
+			.atlas_scale_y = atlas_scale,
+			.space_between_classic = 0.0f,
+			.fit = TIE_SCENE2D_TEXT_FIT_FILL,
+		};
+		TieScene2dTextRenderer_RecordFestringScaled(cg->text_renderer, surface->list, 640, 480, &text_space, rec, count,
+													snap->palette, (w - text_w * k) * 0.5f, (h - text_h * k) * 0.5f,
+													k, k, surface->w, surface->h);
+		return;
+	}
+	if (source == TIE_DC_LASERS) {
+		const int groups = snap->hud.weapon_group_cnt ? snap->hud.weapon_group_cnt : 1;
+		const TieHudInstrument* ins =
+			&snap->hud.instruments[TIE_HUDI_LASER_LED_FIRST + (occurrence < groups ? occurrence : 0)];
+		if (!TieCockpitCommon_InstrumentActive(ins))
+			return;
+		/* panel_updatelasers: value = lit LEDs 0..10; color 0 = the weapon is uncharged. */
+		float charge = (float)ins->value / 10.0f;
+		charge = charge < 0.0f ? 0.0f : charge > 1.0f ? 1.0f : charge;
+		const float inset = h * 0.2f;
+		TieCockpitRenderer_DcFill(surface->list, 0.0f, inset, w, h - 2.0f * inset, 0.02f, 0.12f, 0.03f, 0.6f);
+		if (ins->color != 0)
+			TieCockpitRenderer_DcFill(surface->list, 0.0f, inset, w * charge, h - 2.0f * inset, 0.1f, 0.95f, 0.2f,
+									  1.0f);
+		return;
+	}
+	if (source == TIE_DC_THROTTLE) {
+		/* panel_updatethrottle: the digits read 0..100 percent. */
+		const TieHudInstrument* ins = &snap->hud.instruments[TIE_HUDI_THROTTLE_DIGITS];
+		if (!TieCockpitCommon_InstrumentActive(ins) || ins->value < 0)
+			return;
+		static const float k_yellow[3] = { 0.95f, 0.85f, 0.1f };
+		const int lit = (ins->value * 10 + 50) / 100;
+		TieCockpitRenderer_DcSegments(surface->list, w, h, 10, lit, 10, k_yellow, k_yellow);
+		return;
+	}
+	/* Recharge strips: one segment per power step (0..4, 2 normal), yellow above normal. */
+	const uint16_t cap = snap->hud.working_subsystems;
+	const uint16_t sub = snap->hud.subsystem_active;
+	int level;
+	if (source == TIE_DC_LASER_POWER && (cap & 0x200u))
+		level = snap->hud.laser_power;
+	else if (source == TIE_DC_SHIELD_POWER && (cap & 0x800u) && (sub & 0x001u))
+		level = snap->hud.shield_power;
+	else if (source == TIE_DC_BEAM_POWER && (cap & 0x1000u) && (sub & 0x100u))
+		level = snap->hud.beam_power;
+	else
+		level = 0; /* a system the craft lacks or has off: every segment dark */
+	static const float k_green[3] = { 0.1f, 0.9f, 0.2f }, k_yellow[3] = { 0.95f, 0.85f, 0.1f };
+	TieCockpitRenderer_DcSegments(surface->list, w, h, 4, level, 2, k_green, k_yellow);
+}
+
+/* The targeting computer's target view, drawn into its TFTC DC screen
+ * target at the CRT rect (the flat pass skips it then). */
+static void TieCockpitRenderer_DcTargetView(TieCockpitRenderer* cg, const struct TieCockpitRendererSurface* surface,
+											const TieCockpitRendererEntry* entry, const TieSnapshot* snap) {
+	const TieHudInstrument* ins = &snap->hud.instruments[TIE_HUDI_CMD_3D_CRT];
+	if (!entry || !TieCockpitCommon_InstrumentActive(ins) || !snap->cockpit.pip_target_present ||
+		!(snap->hud.working_subsystems & 0x01u) || !cg->flight_gpu)
+		return;
+	AeronTexture* pip_texture = TieFlightRenderer_PipTexture(cg->flight_gpu);
+	float dst_x, dst_y, dst_w, dst_h;
+	TieCockpitRenderer_ResolvePipRect(entry, snap, ins->x, ins->y, ins->param1, ins->param2, &dst_x, &dst_y, &dst_w,
+									  &dst_h);
+	if (!pip_texture || dst_w <= 0.0f || dst_h <= 0.0f)
+		return;
+	const TieCockpitRendererDrawSpace* space = &surface->space;
+	const float x0 = space->fit_x + dst_x * space->scale_x, y0 = space->fit_y + dst_y * space->scale_y;
+	const float x1 = x0 + dst_w * space->scale_x, y1 = y0 + dst_h * space->scale_y;
+	AeronDrawList2DQuad4 quad = {
+		.texture = pip_texture,
+		.tint = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.blend = AERON_BLIT2D_BLEND_PMA,
+		.filter = AERON_BLIT2D_FILTER_LINEAR,
+		.q = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.corners = { { x0, y0, 0.0f, 0.0f }, { x1, y0, 1.0f, 0.0f }, { x0, y1, 0.0f, 1.0f }, { x1, y1, 1.0f, 1.0f } },
+	};
+	AeronDrawList_AddQuad4(surface->list, &quad);
+}
+
+/* Opens a surface target for every TFTC DC screen with something to show.
+ * Gauge sources get a target of the screen's shape with the gauge drawn in.
+ * Instrument sources, on the first screen of each, get the box around their
+ * instruments, widened to the screen's shape so nothing is stretched, at the
+ * resolution it covers on screen. */
+static void TieCockpitRenderer_BeginDcSurfaces(TieCockpitRenderer* cg, const TieDcLayout* dc, int coord_w,
+											   int coord_h, const TieCockpitRendererEntry* entry,
+											   const TieSnapshot* snap) {
+	const TieCockpitRendererDrawSpace* screen = &cg->pending_space;
+	int seen[TIE_DC_SOURCE_COUNT] = { 0 };
+	for (int s = 0; s < dc->count; ++s) {
+		const TieDcScreen* dc_screen = &dc->screens[s];
+		const int occurrence = seen[dc_screen->source]++;
+		if (TieCockpitRenderer_DcGaugeSource(dc_screen->source)) {
+			const float aspect = dc_screen->aspect > 0.0f ? dc_screen->aspect : 1.0f;
+			const int w = aspect >= 1.0f ? 256 : (int)fmaxf(256.0f * aspect, 8.0f);
+			const int h = aspect >= 1.0f ? (int)fmaxf(256.0f / aspect, 8.0f) : 256;
+			struct TieCockpitRendererSurface* surface = TieCockpitRenderer_OpenDcSurface(cg, s, w, h);
+			if (surface)
+				TieCockpitRenderer_DrawDcGauge(cg, surface, entry, dc_screen->source, occurrence, snap);
+			continue;
+		}
+		if (occurrence > 0)
+			continue;
+		float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+		for (int m = 0; m < TIE_COCKPIT_EDITOR_ID_COUNT; ++m) {
+			if (!cg->editor_active[m] || TieDcLayout_SourceOf(m) != dc_screen->source)
+				continue;
+			x0 = fminf(x0, cg->editor_anchor_x[m]);
+			y0 = fminf(y0, cg->editor_anchor_y[m]);
+			x1 = fmaxf(x1, cg->editor_anchor_x[m] + cg->editor_extent_w[m]);
+			y1 = fmaxf(y1, cg->editor_anchor_y[m] + cg->editor_extent_h[m]);
+		}
+		if (x1 < x0)
+			continue;
+		/* Instruments are anchored at a point; leave room for what they draw. */
+		const float pad = TieCockpitRenderer_DcTextSource(dc_screen->source) ? 1.0f : 12.0f;
+		float hw = (x1 - x0) * 0.5f + pad, hh = (y1 - y0) * 0.5f + pad;
+		if (dc_screen->aspect > 0.0f) {
+			const float aspect = dc_screen->aspect;
+			if (hw / hh < aspect)
+				hw = hh * aspect;
+			else
+				hh = hw / aspect;
+		}
+		const int w = (int)fminf(fmaxf(2.0f * hw * screen->scale_x, 16.0f), 2048.0f);
+		const int h = (int)fminf(fmaxf(2.0f * hh * screen->scale_y, 16.0f), 2048.0f);
+		struct TieCockpitRendererSurface* surface = TieCockpitRenderer_OpenDcSurface(cg, s, w, h);
+		if (!surface)
+			continue;
+		const float cx = (x0 + x1) * 0.5f, cy = (y0 + y1) * 0.5f;
+		surface->x0 = cx - hw;
+		surface->y0 = cy - hh;
+		surface->x1 = cx + hw;
+		surface->y1 = cy + hh;
+		const float k_x = (float)w / (2.0f * hw), k_y = (float)h / (2.0f * hh);
+		surface->space = (TieCockpitRendererDrawSpace) {
+			.target_w = w,
+			.target_h = h,
+			.coord_w = coord_w,
+			.coord_h = coord_h,
+			.fit_x = -surface->x0 * k_x,
+			.fit_y = -surface->y0 * k_y,
+			.fit_w = (float)coord_w * k_x,
+			.fit_h = (float)coord_h * k_y,
+			.scale_x = k_x,
+			.scale_y = k_y,
+		};
+		if (dc_screen->source == TIE_DC_TARGETING)
+			TieCockpitRenderer_DcTargetView(cg, surface, entry, snap);
+		else if (dc_screen->source == TIE_DC_SHIELDS)
+			TieCockpitRenderer_DrawDcShieldRing(surface, snap);
+	}
+}
+
 /* Opens a surface target for every editor group set to match the cockpit
  * surface: its box (scaled like the editor's handle) at screen resolution. */
-static void TieCockpitRenderer_BeginSurfaces(TieCockpitRenderer* cg, int coord_w, int coord_h) {
+static void TieCockpitRenderer_BeginSurfaces(TieCockpitRenderer* cg, int coord_w, int coord_h,
+											 const TieCockpitRendererEntry* entry, const TieSnapshot* snap) {
 	for (int i = 0; i < TIE_COCKPIT_MAX_SURFACES; ++i)
 		cg->surfaces[i].live = false;
 	if (!cg->flight_gpu || !TieFlightRenderer_Cockpit3dActive(cg->flight_gpu))
 		return;
+	const TieDcLayout* dc = TieCockpitRenderer_DcLayout(cg);
+	if (dc) {
+		TieCockpitRenderer_BeginDcSurfaces(cg, dc, coord_w, coord_h, entry, snap);
+		return;
+	}
 	const TieCockpitRendererDrawSpace* screen = &cg->pending_space;
 	for (int id = 0; id < TIE_COCKPIT_EDITOR_ID_COUNT; ++id) {
 		if (!cg->editor_active[id] || !TieCockpitEditor_Surface(id) || TieCockpitRenderer_SurfaceFor(cg, id))
@@ -3114,6 +3470,7 @@ static void TieCockpitRenderer_BeginSurfaces(TieCockpitRenderer* cg, int coord_w
 		if (!surface->rt || !surface->list)
 			continue;
 		surface->group = group;
+		surface->screen = -1;
 		surface->x0 = cx - hw;
 		surface->y0 = cy - hh;
 		surface->x1 = cx + hw;
@@ -3134,6 +3491,41 @@ static void TieCockpitRenderer_BeginSurfaces(TieCockpitRenderer* cg, int coord_w
 		static const float clear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 		AeronDrawList_Begin(surface->list, surface->rt, w, h, AERON_DRAWLIST2D_CLEAR, clear);
 		surface->live = true;
+	}
+}
+
+/* Lays a TFTC DC screen's target on the cockpit through each of its
+ * triangles, perspective-correct: a quad whose last corner repeats the third
+ * draws just the triangle. Display coordinates outside 0..1 sample the
+ * target's transparent border. */
+static void TieCockpitRenderer_DrawDcScreen(TieCockpitRenderer* cg, const struct TieCockpitRendererSurface* surface,
+											const TieDcScreen* dc_screen) {
+	const TieCockpitRendererDrawSpace* screen = &cg->pending_space;
+	for (int t = 0; t < dc_screen->triangle_count; ++t) {
+		const TieDcTriangle* tri = &dc_screen->triangles[t];
+		float clip[3][4];
+		bool visible = true;
+		for (int c = 0; c < 3 && visible; ++c)
+			visible = TieFlightRenderer_Cockpit3dProject(cg->flight_gpu, tri->position[c], clip[c]);
+		if (!visible)
+			continue;
+		AeronDrawList2DQuad4 quad = {
+			.texture = Aeron_RenderTargetGetTexture(surface->rt),
+			.tint = { 1.0f, 1.0f, 1.0f, 1.0f },
+			.blend = AERON_BLIT2D_BLEND_PMA,
+			.filter = AERON_BLIT2D_FILTER_LINEAR,
+		};
+		static const int k_corner[4] = { 0, 1, 2, 2 };
+		for (int c = 0; c < 4; ++c) {
+			const int i = k_corner[c];
+			quad.corners[c][0] = (clip[i][0] / clip[i][3] + 1.0f) * 0.5f * (float)screen->target_w;
+			quad.corners[c][1] = (1.0f - clip[i][1] / clip[i][3]) * 0.5f * (float)screen->target_h;
+			quad.corners[c][2] = tri->display[i][0];
+			quad.corners[c][3] = tri->display[i][1];
+			/* q carries relative depth for perspective-correct sampling. */
+			quad.q[c] = clip[i][3] / clip[0][3];
+		}
+		AeronDrawList_AddQuad4(cg->record_list, &quad);
 	}
 }
 
@@ -3158,9 +3550,14 @@ static void TieCockpitRenderer_FinishSurfaces(TieCockpitRenderer* cg, AeronComma
 			px[c] = screen->fit_x + sx[c] * screen->scale_x;
 			py[c] = screen->fit_y + sy[c] * screen->scale_y;
 		}
+		const TieDcLayout* dc = surface->screen >= 0 ? TieCockpitRenderer_DcLayout(cg) : NULL;
+		if (dc) {
+			TieCockpitRenderer_DrawDcScreen(cg, surface, &dc->screens[surface->screen]);
+			continue;
+		}
 		const float centre_x = (px[0] + px[3]) * 0.5f, centre_y = (py[0] + py[3]) * 0.5f;
 		float hit[3], normal[3], origin[3], dir0[3];
-		if (TieFlightRenderer_Cockpit3dSurfaceAt(cg->flight_gpu, centre_x, centre_y, hit, normal) &&
+		if (!dc && TieFlightRenderer_Cockpit3dSurfaceAt(cg->flight_gpu, centre_x, centre_y, hit, normal) &&
 			TieFlightRenderer_ScreenRay(cg->flight_gpu, centre_x, centre_y, origin, dir0)) {
 			float corner[4][3];
 			bool ok = true;
@@ -3542,6 +3939,9 @@ static void TieCockpitRenderer_RecordCockpitText(TieCockpitRenderer* cg, int coo
 				best = dx * dx + dy * dy;
 			}
 		}
+		/* Readouts of an instrument a DC gauge replaces or the cockpit leaves out. */
+		if (nearest >= 0 && TieCockpitRenderer_DcReplaces(cg, nearest))
+			continue;
 		float scale_x = 1.0f, scale_y = 1.0f, angle_deg = 0.0f;
 		if (nearest >= 0)
 			TieCockpitEditor_Transform(nearest, &scale_x, &scale_y, &angle_deg);
@@ -3615,6 +4015,30 @@ static bool TieCockpitRenderer_CockpitRecordLists(TieCockpitRenderer* cg, AeronC
 			TieCockpitRenderer_InsAnchor(entry, i, ins->x, ins->y, snap, &cg->editor_anchor_x[i],
 										 &cg->editor_anchor_y[i]);
 	}
+	/* On TFTC DC screens the digit fields are sized by their text, about 5 x 7
+	 * px a character in the 640 x 480 frame, so their screens fit it. */
+	if (TieCockpitRenderer_DcLayout(cg)) {
+		const float k = (float)coord_w / 640.0f;
+		static const int k_text_ids[] = { TIE_HUDI_SPEED_DIGITS, TIE_HUDI_THROTTLE_DIGITS, TIE_HUDI_CLOCK_DIGITS };
+		for (size_t t = 0; t < sizeof k_text_ids / sizeof k_text_ids[0]; ++t) {
+			const int id = k_text_ids[t];
+			if (!cg->editor_active[id])
+				continue;
+			const int chars = id == TIE_HUDI_CLOCK_DIGITS ? (int)strlen(snap->hud.mission_clock_text)
+														  : (snap->hud.instruments[id].digits ? snap->hud.instruments[id].digits : 3);
+			cg->editor_extent_w[id] = 5.0f * (float)(chars > 0 ? chars : 1) * k;
+			cg->editor_extent_h[id] = 7.0f * k;
+		}
+		/* The hull shape sits inside the shield ring, which centres on it. */
+		const TieHudInstrument* hull = &snap->hud.instruments[TIE_HUDI_HULL_DAMAGE_LEVER];
+		float u0, v0, u1, v1;
+		int cel_w, cel_h;
+		if (cg->editor_active[TIE_HUDI_HULL_DAMAGE_LEVER] &&
+			TieCockpitRenderer_ResolveCel(entry, hull->param1, &u0, &v0, &u1, &v1, &cel_w, &cel_h)) {
+			cg->editor_extent_w[TIE_HUDI_HULL_DAMAGE_LEVER] = (float)cel_w;
+			cg->editor_extent_h[TIE_HUDI_HULL_DAMAGE_LEVER] = (float)cel_h;
+		}
+	}
 	/* TFTC-only panels, placed and sized like instruments with an extent. */
 	{
 		const int id = TIE_COCKPIT_EDITOR_REPAIRS_ID;
@@ -3646,7 +4070,7 @@ static bool TieCockpitRenderer_CockpitRecordLists(TieCockpitRenderer* cg, AeronC
 	}
 	TieCockpitEditor_Pivots(cg->editor_anchor_x, cg->editor_anchor_y, cg->editor_extent_w, cg->editor_extent_h,
 							cg->editor_active, TIE_COCKPIT_EDITOR_ID_COUNT, cg->editor_pivot_x, cg->editor_pivot_y);
-	TieCockpitRenderer_BeginSurfaces(cg, coord_w, coord_h);
+	TieCockpitRenderer_BeginSurfaces(cg, coord_w, coord_h, entry, snap);
 
 	AeronDrawList_Begin(cg->before_pip_list, NULL, rt_w, rt_h, AERON_DRAWLIST2D_LOAD, NULL);
 	AeronDrawList_Begin(cg->after_pip_list, NULL, rt_w, rt_h, AERON_DRAWLIST2D_LOAD, NULL);
@@ -3706,8 +4130,14 @@ static bool TieCockpitRenderer_CockpitRecordLists(TieCockpitRenderer* cg, AeronC
 	 * only calls in views 0 and 19 (panel_updatepanel:339-358). In other
 	 * views bracket_x/y are stale from the last view-0 tick; painting
 	 * them would overlay the side-view cockpit bitmap. */
-	if (snap->cockpit.view_idx == 0 || snap->cockpit.view_idx == 19)
+	if (snap->cockpit.view_idx == 0 || snap->cockpit.view_idx == 19) {
+		/* On the surface of the radar its blip is on (a 3D cockpit's sensor
+		 * screen), like the blips. */
+		const int radar_id = snap->hud.bracket_radar_idx == 0 ? TIE_HUDI_RADAR_LEFT : TIE_HUDI_RADAR_RIGHT;
+		const bool on_surface = TieCockpitRenderer_BeginSurface(cg, radar_id);
 		TieCockpitRenderer_DrawRadarBracket(cg, cmd, NULL, entry, coord_w, coord_h, snap);
+		TieCockpitRenderer_EndSurface(cg, on_surface);
+	}
 
 	/* Cockpit text — clock + HUD/CMD readouts. Both builders share
 	 * the same TieScene2dTextSpace so build_hud_text's measurements
@@ -3832,8 +4262,10 @@ void TieCockpitRenderer_RenderInPass(TieCockpitRenderer* cg, AeronCommandBuffer*
 
 	const TieHudInstrument* pip = &snap->hud.instruments[2];
 	TieCockpitRendererHudWidgetKind kind = (TieCockpitRendererHudWidgetKind)hud_widget_kind[2];
+	/* On a TFTC DC targeting screen the target view went into its target. */
 	if (cg->pending_entry && TieCockpitCommon_InstrumentActive(pip) &&
-		TieCockpitRenderer_ViewAllowsWidget(snap->cockpit.view_idx, 2, kind)) {
+		TieCockpitRenderer_ViewAllowsWidget(snap->cockpit.view_idx, 2, kind) &&
+		!TieCockpitRenderer_SurfaceFor(cg, TIE_HUDI_CMD_3D_CRT)) {
 		TieCockpitRenderer_Draw3dcrt(cg, pass, cg->pending_entry, snap);
 	}
 

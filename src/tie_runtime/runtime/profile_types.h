@@ -31,6 +31,7 @@ typedef enum TieFlightModelSource {
 typedef enum TieMusicSource {
 	TIE_MUSIC_IMUSE = 0,
 	TIE_MUSIC_TIE98 = 1,
+	TIE_MUSIC_TFTC = 2, /* TFTC's digital soundtrack in resources/tftc/music and signals */
 } TieMusicSource;
 
 typedef struct TieFlightProfile {

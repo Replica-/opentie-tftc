@@ -9,6 +9,7 @@
 #include "tie_remaster/flight/mesh_common.h"
 #include "tie_remaster/flight/render_math.h"
 #include "tie_remaster/flight/renderer_internal.h"
+#include "tie_remaster/flight/tftc_ships.h"
 #include <stdio.h>
 
 #include "tie_runtime/snapshot/snapshot.h"
@@ -243,11 +244,14 @@ static void TieFlightRenderer_BuildInstance(TieFlightRenderer* g, AeronSceneMesh
 											const TieFlightMotionBlurPrevious* mb, uint16_t curr_index,
 											bool is_static, const AeronSceneMeshTable* table) {
 	memset(in, 0, sizeof *in);
-	in->mesh = s->mesh;
-	in->mesh_table = table;
+	/* A TFTC model shares no mesh ordinals with the craft's components, so it
+	 * draws whole and unarticulated. Debris shows one original submesh. */
+	const bool tftc = s->tftc_mesh && fl->genus != TIE_GENUS_DEBRIS;
+	in->mesh = tftc ? s->tftc_mesh : s->mesh;
+	in->mesh_table = tftc ? NULL : table;
 	/* OPTs may use opposite-wound faces for distinct interior and exterior
 	 * textures. Preserve the single-sided contract through remastered assets. */
-	if (s->mesh->all_materials_single_sided)
+	if (in->mesh->all_materials_single_sided)
 		in->cull_mode = AERON_CULL_BACK;
 
 	const bool is_projectile =
@@ -286,10 +290,10 @@ static void TieFlightRenderer_BuildInstance(TieFlightRenderer* g, AeronSceneMesh
 	/* is_static with mb enabled: prev_transform == transform + the
 	 * scene's previous view_proj → camera-induced velocity. */
 
-	in->variant = s->mesh->variant_count ? (uint32_t)fl->model_variant < s->mesh->variant_count
-											   ? fl->model_variant
-											   : s->mesh->variant_count - 1
-										 : 0;
+	in->variant = !tftc && s->mesh->variant_count ? (uint32_t)fl->model_variant < s->mesh->variant_count
+														? fl->model_variant
+														: s->mesh->variant_count - 1
+												  : 0;
 
 	/* Retain the projectile material rule used by the scene model path. */
 	if (is_projectile)
@@ -430,10 +434,14 @@ void TieFlightRenderer_SceneSubmit(TieFlightRenderer* g, const TieSnapshot* curr
 		AeronSceneMeshInstance in;
 		TieFlightRenderer_BuildInstance(g, &in, s, fl, view_proj, cam_pos, curr->camera.world_pos, mb, i,
 										/*is_static=*/false, table);
-		if (shadow_only)
+		if (shadow_only) {
 			AeronScene_AddShadowCaster(g->scene, &in);
-		else
+		} else {
 			AeronScene_AddMeshInstance(g->scene, &in);
+			if (in.mesh == s->tftc_mesh)
+				TieFlightTftcShips_SubmitEngineGlows(g, in.mesh, in.transform, cam_pos,
+													 TieFlightTftcShips_EngineGlowScale(fl->current_speed));
+		}
 	}
 
 	TieFlightRenderer_SubmitStatics(g, curr, view_proj, &fr, mb);

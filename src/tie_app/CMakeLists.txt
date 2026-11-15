@@ -7,6 +7,8 @@ add_executable(tie
     hotkeys.h
     main.c
     midi_resources.c
+    music_overlay.c
+    music_overlay.h
     ui.c
     config/app_config.c
     config/keyboard_config.c

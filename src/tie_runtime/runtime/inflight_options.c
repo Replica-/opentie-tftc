@@ -64,7 +64,8 @@ void TieInflightOptions_ApplyAudio(void) {
 	imuse_set_sfx_vol(im, inflight_sound_vol ? (int)inflight_sound_vol * 8 - 1 : 0);
 	imuse_set_voice_vol(im, inflight_speech_vol ? (int)inflight_speech_vol * 8 - 1 : 0);
 	imuse_set_music_vol(im, inflight_music_vol ? (int)inflight_music_vol * 8 - 1 : 0);
-	if (TieMusicPolicy_UsesTie98())
+	/* Also sets the TFTC soundtrack's volume. */
+	if (TieMusicPolicy_UsesTie98() || TieMusicPolicy_UsesTftc())
 		gamesnd_Set_CD_Volume(inflight_music_vol);
 }
 

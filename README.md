@@ -3,17 +3,14 @@
 [![GitHub Release](https://img.shields.io/github/v/release/elyosh/OpenTIE)](https://github.com/elyosh/OpenTIE/releases/latest)
 [![Visit our Discord server](https://img.shields.io/discord/1533001488391995442)](https://discord.gg/WBvYzczWfG)
 
-![Screenshot of OpenTIE](assets/opentie-001.jpg)
+![A TFTC TIE fighter wingman and Star Destroyer seen from the TFTC TIE fighter cockpit](assets/opentie-tftc-tie-fighter.jpg)
 
-![TIE fighter TFTC cockpit in flight with an edited HUD layout](assets/opentie-tftc-cockpit.jpg)
+![A TFTC capital ship close alongside the TIE fighter cockpit](assets/opentie-tftc-capital-ship.jpg)
 
-*The X-Wing Alliance Upgrade TIE fighter cockpit by DTM (not included with OpenTIE) with an edited HUD: the
-Repairs and Objectives panels drawn onto the side consoles, and the targeting computer without a background.*
+![The TFTC TIE bomber cockpit with the HUD on its screens](assets/opentie-tftc-tie-bomber.jpg)
 
-![The cockpit editor over the TFTC cockpit](assets/opentie-cockpit-editor.jpg)
-
-*The cockpit editor: the help panel (top left), a labelled box over each HUD element, and the COCKPIT VIEW and
-PLAY controls (top right).*
+*TIE Fighter Total Conversion's ship models and cockpits (not included with OpenTIE) in flight, with the HUD on
+each cockpit's own screens as its Dynamic Cockpit file lays it out.*
 
 OpenTIE is an open-source reimplementation of *Star Wars: TIE Fighter* for
 Windows, macOS, and Linux. It runs the original game data natively on current
@@ -60,6 +57,19 @@ SoundFont.
 The original prerecorded TIE98 music remains available when the complete 1998
 experience is preferred.
 
+The **TFTC** music source plays the digital soundtrack of TIE Fighter Total Conversion, as FLAC recordings in
+`resources/tftc/`. In flight, TIE's own adaptive music logic picks the state, and each of its 11 states plays its
+recording, `NN. Inflight - <Name>.flac` in `music/` (Introduction, Wait, Rebels, Polar Plotting, Intrusion,
+Challenge, Confidence, Panic, Climax, Fail, Success). Moving between states plays the recorded bridge the MIDI
+script would play there, and every music sequence (kills, losses, goals, arrivals, eject, hyperspace) plays its
+recorded sting over the music, all from `signals/`. In the front end, TIE's menu music script picks the piece and
+its recording plays from `rooms/` (Register, Main Concourse, Tech Room, Bridge) or `songs/`. Silence at the start
+and end of each recording is trimmed as it plays.
+
+The recordings come from [this soundtrack](https://drive.google.com/drive/folders/12mgIewG2_mqL5EVr1gLzrLE4mhYJKePp).
+Download it and place its files in the matching `resources/tftc/` folders (`music/`, `signals/`, `rooms/`, `songs/`),
+keeping their file names.
+
 ## Graphics
 
 OpenTIE renders flight with a modern graphics pipeline that combines the
@@ -87,37 +97,60 @@ The classic (original renderer) view is disabled; `TAB` no longer switches to it
 OpenTIE does not ship the cockpit models. With TFTC Cockpits on, it loads XWA-format cockpit OPTs from
 `resources/cockpit3d/` next to `OpenTIE.exe`, named `TieFighterCockpit.opt`, `TieInterceptorCockpit.opt`,
 `TieBomberCockpit.opt`, `TieAdvancedX1Cockpit.opt`, `TieDefenderCockpit.opt`, `AssaultGunboatCockpit.opt` and
-`MissileBoatCockpit.opt`. A craft without a model keeps the cockpit artwork. The models are drawn only with the
+`MissileBoatCockpit.opt`. `tools/tftc/copy_tftc_models.sh <TFTC dir>` copies them there from a TFTC install,
+with each cockpit's `Materials` `.mat` file, whose metallic, glossiness and shadeless values the cockpit is drawn
+with, and its `DynamicCockpit` `.dc` file. A craft without a model keeps the cockpit artwork. The models are drawn only with the
 HD flight models, and the first flight with each one takes several seconds to load.
 
 With a TFTC cockpit the HUD gains two panels: **Objectives**, the mission goals screen's text, and **Repairs**,
-the damage-control readout. The targeting computer draws without a background, so the target sits on the
-cockpit's own screen.
+the damage-control readout.
 
-### Cockpit editor
+### Cockpit displays
 
-The cockpit editor lays out the HUD over a TFTC cockpit. Start it with `--cockpit-editor` (with
-`--skip-to-mission <pilot>` to go straight into flight; the launch configuration "OpenTIE (Release, cockpit
-editor)" does both). Once the cockpit is on screen the editor selects a target, so the targeting computer has
-something to show, and pauses the game. An on-screen panel lists the controls (`H` hides it):
+A TFTC cockpit shows the HUD on its own screens, laid out by the cockpit's `.dc` file the way X-Wing Alliance
+Upgrade's Dynamic Cockpit does it, following OpenXWA's reading of those files. Each `.dc` section names a texture
+of the cockpit and the rectangle of it that shows a display; OpenTIE finds that rectangle on the model and draws the
+matching TIE instruments into it:
 
-| Control | Effect |
+| `.dc` source | TIE instruments |
 |---|---|
-| Drag a box | Moves that HUD element or group |
-| Mouse wheel on a box | Scales it; `Shift` + wheel rotates it |
-| Green handles on a box | Right edge sets the width, bottom edge the height, corner both |
-| Right-click a box | Menu: match surface, reset size, reset all; for Objectives also word wrap and headings |
-| Drag **COCKPIT VIEW** (top right) | Slides the cockpit model; mouse wheel on it zooms, right-click resets the view |
-| **PLAY** (under COCKPIT VIEW) | Resumes the game to try the layout; `F12` returns to the editor |
+| `TARGETING_COMPUTER_SRC` | Targeting computer, with the target view and readouts |
+| `LEFT_SENSOR_SRC` / `RIGHT_SENSOR_SRC` | Front / rear radar |
+| `SHIELDS_SRC` | Shields and hull |
+| `DUAL_LASERS_L_SRC` | Laser charge |
+| `MISSILES_SRC`, `AUTOSIZE_MISSILES_L_SRC` | Warheads |
+| `SPEED_THROTTLE_SRC`, `AUTOSIZE_SPEED_SRC` | Speed and throttle |
+| `BEAM_LEVEL_SRC` | Beam weapon |
+| `LASER_RECHARGE_SRC`, `SHIELD_RECHARGE_SRC`, `BEAM_RECHARGE_SRC`, `ENGINE_POWER_SRC` | Laser, shield, beam and engine power |
+| `NAME_TIME_SRC`, `AUTOSIZE_TIME_SRC` | Mission clock |
+| `LEFT_TEXT_BOX_SRC` / `RIGHT_TEXT_BOX_SRC` | Repairs / Objectives |
 
-**Match surface** draws an element as if printed on the cockpit surface behind its centre: the element is
-rendered to a texture and projected onto that surface's plane. The 3D view inside the targeting computer stays
-flat. On the Objectives panel the handles set its wrap width and visible height and the wheel scales its text.
+Displays are drawn through every face of the cockpit that uses the screen's texture, bent strips included, and
+keep their proportions. The laser charge bars, the laser, shield and beam recharge strips and the throttle are
+drawn as gauges from TIE's values, the way XWA draws them, on every screen that shows them. The speed and clock
+readouts fill their screens, and the targeting computer shows its target view on its screen. The shields screen
+shows XWA's shield ring around the craft, its top half the front shield and its bottom half the rear (green, yellow
+or red by strength, cyan when overcharged), and the `SHIELDS_FRONT_SRC` / `SHIELDS_BACK_SRC` screens their
+percentages, up to 200%; TIE's shield bars are left off. Instruments whose
+display the cockpit has no screen for are left off the HUD, as in XWA; the gunsight, warnings and threat display,
+which have no XWA display, stay on the flat HUD. The `.dc` file's `xwahacker_fov` sets the field of view.
+Without a `.dc` file the HUD stays flat.
 
-Changes save as they are made to `resources/cockpit3d/<Model>.hud.yaml` beside the cockpit model (for example
-`TieFighterCockpit.hud.yaml`), and the layout is used whenever that cockpit is flown. The file holds the view
-(cockpit slide and field of view), the Objectives options, and per element an offset in pixels of the
-640x480 cockpit frame, a horizontal and vertical scale, an angle and whether it matches the surface.
+The pilot's eye is the craft's `[CockpitPov]` from its `FlightModels/<Craft>.ini`, copied beside the cockpit as
+`<Cockpit>.ini` (TFTC keeps the section commented out as `[CockpitPov;]` to document XWA's built-in values, which
+are read). Where TFTC replaced a cockpit and that position no longer fits it, as for the assault gunboat and
+missile boat, the eye is placed where it sits in the others relative to the targeting computer screen.
+
+### TFTC ship models
+
+OpenTIE can draw TFTC's ship models in place of the original ones. Copy them from a TFTC install with
+`tools/tftc/copy_tftc_models.sh <TFTC dir>`, which puts each matching `FlightModels` OPT and its `Materials`
+`.mat` file in `resources/tftc/`, named after the TIE98 model it replaces (`TieFighter.opt` becomes
+`TIEFTR.opt`), then rebuild so they are staged next to `OpenTIE.exe`. The `.mat` files set each texture's
+metallic, glossiness and shadeless values. A model's engine glows are drawn as X-Wing Alliance draws them,
+growing with the craft's throttle (the TFTC TIE fighter model has none). Only the drawn model changes: collision, hardpoints and debris keep
+the original, and a TFTC model is drawn whole, without destroyed parts hidden or turrets turning. A model that
+cannot be built logs a warning and the original is drawn. Delete `resources/tftc/` to go back to the originals.
 
 ## Smoother flight
 
@@ -211,10 +244,10 @@ machine.
 
 | Option | Effect |
 |---|---|
-| `--skip-to-mission <pilot>` | Loads the named pilot and starts their current tour battle mission, skipping the menus |
+| `--skip-to-mission <pilot> [battle mission]` | Loads the named pilot and starts their current tour battle mission, or the given one (`1 3` for battle 1, mission 3), skipping the menus |
 | `--headless` | Creates a hidden window, treats it as always focused, and discards audio |
 | `--capture <file.png> [seconds]` | Saves the flight view as a PNG once flight has run for the given time (default 6), then quits |
-| `--cockpit-editor` | Opens the cockpit editor once a TFTC cockpit is on screen (see [Cockpit editor](#cockpit-editor)) |
+| `--music <source>` | Uses that music source (`imuse`, `tie98` or `tftc`) for this run without changing the saved setting |
 
 For example, `OpenTIE.exe --headless --skip-to-mission PILOT --capture view.png 3`
 saves a flight frame without opening a window.

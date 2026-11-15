@@ -26,7 +26,8 @@ static bool TieLaunchOptions_LaunchOptionsValid(const TieAppLaunchOptions* optio
 		   (options->midi_backend == TIE_MIDI_BACKEND_FLUIDSYNTH ||
 			options->midi_backend == TIE_MIDI_BACKEND_FM4_OPL3 ||
 			options->midi_backend == TIE_MIDI_BACKEND_SC55) &&
-		   (options->music_source == TIE_MUSIC_IMUSE || options->music_source == TIE_MUSIC_TIE98);
+		   (options->music_source == TIE_MUSIC_IMUSE || options->music_source == TIE_MUSIC_TIE98 ||
+			options->music_source == TIE_MUSIC_TFTC);
 }
 
 static void TieLaunchOptions_LaunchOptionsNormalize(TieAppLaunchOptions* options) {

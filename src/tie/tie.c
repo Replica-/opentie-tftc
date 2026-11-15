@@ -63,6 +63,7 @@
 #include "tie/xtrans2.h"
 #include "tie_runtime/audio/config.h"
 #include "tie_runtime/audio/music_policy.h"
+#include "tie_runtime/audio/tftc_music.h"
 #include "tie_runtime/diagnostics/diagnostics.h"
 #include "tie_runtime/diagnostics/flight_trace.h"
 #include "tie_runtime/display/classic_display.h"
@@ -1545,6 +1546,13 @@ void tie_simulator(int replay_mode) {
 			}
 #endif
 #ifdef TIE_MODERN
+			TieMusicPolicy_SetFlightActive(true);
+			if (TieMusicPolicy_UsesTftc())
+				TieTftcMusic_PlayRoom(NULL, false);
+			if (TieMusicPolicy_UsesTftc() && musicenabled && TieTftcMusic_Start()) {
+				TieTftcMusic_SetVolume(inflight_music_vol);
+				TieTftcMusic_SetTieState(1);
+			}
 			continuation->phase = TIE_SIM_PHASE_AFTER_MISSION;
 			TieFlightTask_BeginMission();
 			return;
@@ -1561,6 +1569,9 @@ void tie_simulator(int replay_mode) {
 			TIE_FLIGHT_TRACE_END_MISSION();
 			if (TieMusicPolicy_UsesTie98())
 				cdaudio_Close_Device();
+			if (TieMusicPolicy_UsesTftc())
+				TieTftcMusic_Stop();
+			TieMusicPolicy_SetFlightActive(false);
 #else
 #ifdef TIE98
 		cdaudio_Close_Device();
@@ -2799,6 +2810,10 @@ int16_t tie_checkobjecteyexyz(uint16_t obj_idx, uint16_t bound) {
 	return 1;
 }
 
+#ifdef TIE_MODERN
+int tie_cdmusictrack(void) { return cdmusic_kind; }
+#endif
+
 // FUNCTION: TIE98 0x48F730
 void tie_updatemusic_tie98(void) {
 	uint32_t now;
@@ -3065,8 +3080,14 @@ void tie_updatemusic(void) {
 	uint16_t primary_killed;
 	uint16_t primary_total;
 
+#ifdef TIE_MODERN
+	/* TFTC's digital soundtrack has no MIDI music buffer. */
+	if (!musicenabled || (!music_buffer && !TieMusicPolicy_UsesTftc()) || timers[TIMER_MUSIC_CHANGE] != 0)
+		return;
+#else
 	if (!musicenabled || !music_buffer || timers[TIMER_MUSIC_CHANGE] != 0)
 		return;
+#endif
 	intensity = 0;
 	timers[TIMER_MUSIC_CHANGE] = 59;
 
@@ -3217,6 +3238,16 @@ void tie_updatemusic(void) {
 	if (intensity > 5)
 		intensity = 5;
 	lastmusicstate = (uint8_t)state;
+#ifdef TIE_MODERN
+	if (TieMusicPolicy_UsesTftc()) {
+		/* The TIE98 CD music's failure test: primary goals failed. */
+		if (mission.primary_global == 2)
+			TieTftcMusic_SetFailed();
+		else
+			TieTftcMusic_SetTieState(state);
+		return;
+	}
+#endif
 	fscript_MsSetState(state);
 	fscript_MsSetAttribute(0, (int16_t)intensity);
 	fscript_MsRefreshScript();

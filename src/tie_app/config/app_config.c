@@ -461,6 +461,8 @@ static bool TieAppConfig_ParseComplete(const AeronConfigFile* document,
 		out->music_source = TIE_MUSIC_IMUSE;
 	else if (strcmp(music_source, "tie98") == 0)
 		out->music_source = TIE_MUSIC_TIE98;
+	else if (strcmp(music_source, "tftc") == 0)
+		out->music_source = TIE_MUSIC_TFTC;
 	else
 		return TieAppConfig_ConfigError(error, capacity, "invalid audio.music '%s'", music_source);
 	if (!TieAppConfig_ReadBool(document, "audio.sb16_filter", &out->sb16_filter_enabled, error, capacity))
@@ -852,9 +854,10 @@ bool TieAppConfig_SetLaunchOptions(TieAppConfigState* state, const TieAppLaunchO
 		strlen(options->sc55_rom_directory) >= TIE_GAME_DATA_PATH_MAX ||
 		(options->model_source != TIE_FLIGHT_MODEL_SOURCE_ORIGINAL &&
 		 options->model_source != TIE_FLIGHT_MODEL_SOURCE_REMASTERED) ||
-		(options->music_source != TIE_MUSIC_IMUSE && options->music_source != TIE_MUSIC_TIE98))
+		(options->music_source != TIE_MUSIC_IMUSE && options->music_source != TIE_MUSIC_TIE98 &&
+		 options->music_source != TIE_MUSIC_TFTC))
 		return TieAppConfig_ConfigError(error, capacity, "invalid launch settings");
-	if (options->midi_backend == TIE_MIDI_BACKEND_SC55 && options->music_source == TIE_MUSIC_IMUSE &&
+	if (options->midi_backend == TIE_MIDI_BACKEND_SC55 && options->music_source != TIE_MUSIC_TIE98 &&
 		options->sc55_rom_directory[0] == '\0')
 		return TieAppConfig_ConfigError(error, capacity,
 										"select an SC-55 ROM directory before closing settings");
@@ -877,7 +880,9 @@ bool TieAppConfig_SetLaunchOptions(TieAppConfigState* state, const TieAppLaunchO
 		!AeronConfigFile_SetBool(candidate, "audio.sb16_filter", options->sb16_filter_enabled,
 								 &aeron_error) ||
 		!AeronConfigFile_SetString(candidate, "audio.music",
-								   options->music_source == TIE_MUSIC_TIE98 ? "tie98" : "imuse",
+								   options->music_source == TIE_MUSIC_TIE98	 ? "tie98"
+								   : options->music_source == TIE_MUSIC_TFTC ? "tftc"
+																			 : "imuse",
 								   &aeron_error)) {
 		AeronConfigFile_Destroy(candidate);
 		return TieAppConfig_LogAeronError(&aeron_error, error, capacity);

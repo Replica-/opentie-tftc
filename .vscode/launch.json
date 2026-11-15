@@ -11,62 +11,141 @@
       "stopAtEntry": false,
       "externalConsole": false,
       "environment": [
-        { "name": "PATH", "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}" },
-        { "name": "SDL_ASSERT", "value": "always_ignore" }
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
       ],
       "MIMode": "gdb",
       "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
       "preLaunchTask": "Build OpenTIE (Debug)",
-      "setupCommands": [{ "text": "-enable-pretty-printing", "ignoreFailures": true }]
+      "setupCommands": [
+        {
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
     },
     {
       "name": "OpenTIE (Debug, skip to mission 1)",
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
-      "args": ["--skip-to-mission", "REPLICA"],
+      "args": [
+        "--skip-to-mission",
+        "REPLICA"
+      ],
       "cwd": "${workspaceFolder}/build/Debug",
       "stopAtEntry": false,
       "externalConsole": false,
       "environment": [
-        { "name": "PATH", "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}" },
-        { "name": "SDL_ASSERT", "value": "always_ignore" }
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
       ],
       "MIMode": "gdb",
       "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
       "preLaunchTask": "Build OpenTIE (Debug)",
-      "setupCommands": [{ "text": "-enable-pretty-printing", "ignoreFailures": true }]
+      "setupCommands": [
+        {
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
     },
     {
       "name": "OpenTIE (Debug, headless, skip to mission 1)",
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
-      "args": ["--headless", "--skip-to-mission", "REPLICA"],
+      "args": [
+        "--headless",
+        "--skip-to-mission",
+        "REPLICA"
+      ],
       "cwd": "${workspaceFolder}/build/Debug",
       "stopAtEntry": false,
       "externalConsole": false,
       "environment": [
-        { "name": "PATH", "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}" },
-        { "name": "SDL_ASSERT", "value": "always_ignore" }
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
       ],
       "MIMode": "gdb",
       "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
       "preLaunchTask": "Build OpenTIE (Debug)",
-      "setupCommands": [{ "text": "-enable-pretty-printing", "ignoreFailures": true }]
+      "setupCommands": [
+        {
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
     },
     {
-      "name": "OpenTIE (Release, cockpit editor)",
+      "name": "OpenTIE (Release, skip to mission 1, TFTC music)",
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/Release/OpenTIE.exe",
-      "args": ["--skip-to-mission", "REPLICA", "--cockpit-editor"],
+      "args": [
+        "--skip-to-mission",
+        "REPLICA",
+        "--music",
+        "tftc"
+      ],
       "cwd": "${workspaceFolder}/build/Release",
       "stopAtEntry": false,
       "externalConsole": false,
       "environment": [
-        { "name": "PATH", "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}" },
-        { "name": "SDL_ASSERT", "value": "always_ignore" }
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+      "preLaunchTask": "Build OpenTIE (Release)"
+    },
+    {
+      "name": "OpenTIE (Release, skip to mission 1, iMUSE MIDI music)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/Release/OpenTIE.exe",
+      "args": [
+        "--skip-to-mission",
+        "REPLICA",
+        "--music",
+        "imuse"
+      ],
+      "cwd": "${workspaceFolder}/build/Release",
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
       ],
       "MIMode": "gdb",
       "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
@@ -82,8 +161,14 @@
       "stopAtEntry": false,
       "externalConsole": false,
       "environment": [
-        { "name": "PATH", "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}" },
-        { "name": "SDL_ASSERT", "value": "always_ignore" }
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
       ],
       "MIMode": "gdb",
       "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",

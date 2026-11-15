@@ -9,6 +9,7 @@
 #include "aeron/scene/mesh.h"
 #include "aeron/scene/present.h"
 #include "aeron/scene/scene3d.h"
+#include "tie_remaster/flight/cockpit/dc_layout.h"
 #include "tie_remaster/flight/motion_blur.h"
 #include "tie_remaster/flight/render_config.h"
 #include "tie_remaster/flight/render_math.h"
@@ -49,6 +50,9 @@
 typedef struct TieFlightSpeciesSceneShip {
 	/* GPU-resident model owned by AeronScene. NULL until loaded. */
 	AeronSceneMesh* mesh;
+	/* TFTC model drawn in place of `mesh` (tftc_ships.c); NULL when the
+	 * species has none. Debris keeps `mesh`. */
+	AeronSceneMesh* tftc_mesh;
 
 	bool tried;
 	bool ready;
@@ -323,6 +327,10 @@ struct TieFlightRenderer {
 	const char* cockpit3d_model;
 	bool cockpit3d_active; /* submitted this frame */
 	float cockpit3d_transform[16]; /* model (metres) to camera-local world, this frame */
+	float cockpit3d_eye[3];        /* pilot eye in the model, metres */
+	/* TFTC DC screens of the loaded cockpit (cockpit/dc_layout.c). */
+	TieDcLayout cockpit3d_dc;
+	bool cockpit3d_dc_loaded;
 	/* Inspector requests are acknowledged during flight and take effect at the
 	 * next mission generation, when simulation and rendering rebuild together.
 	 * `scene_reload_one_idx` uses 0xFFFF as its sentinel. */
@@ -331,6 +339,8 @@ struct TieFlightRenderer {
 
 	/* Active cube map. */
 	AeronTexture* skybox_cube;
+	/* Engine glow sprite of the TFTC models (tftc_ships.c); NULL until one loads. */
+	AeronTexture* tftc_glow_texture;
 	int skybox_loaded_battle; /* -1 = none */
 };
 

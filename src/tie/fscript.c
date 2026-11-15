@@ -2,6 +2,8 @@
 #include "tie/fcallbk.h"
 #include "tie_runtime/audio/imuse_api.h"
 #include "tie_runtime/audio/imuse_session.h"
+#include "tie_runtime/audio/music_policy.h"
+#include "tie_runtime/audio/tftc_music.h"
 
 #include <imuse/filelist.h>
 #include <imuse/hilevel.h>
@@ -375,6 +377,13 @@ int16_t fscript_MsSetState(int16_t new_state) {
 
 // FUNCTION: TIE95 0x2408C
 int16_t fscript_MsSetSequence(int16_t seq_id) {
+#ifdef TIE_MODERN
+	/* TFTC's soundtrack has no MIDI script; its XWA sequences stand in. */
+	if (TieMusicPolicy_UsesTftc()) {
+		TieTftcMusic_PlayTieSequence(seq_id);
+		return 0;
+	}
+#endif
 	if (seq_id > 0 && lolevel_ImGetParam(currentID, PARAM_MARKER) > 0)
 		fscript_PlaySequence(seq_id);
 	return currentSequence;

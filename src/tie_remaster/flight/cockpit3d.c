@@ -11,9 +11,10 @@
 #include "aeron/scene/mesh.h"
 #include "aeron/vfs.h"
 #include "opt.h"
-#include "tie_remaster/flight/cockpit/editor.h"
+#include "tie_remaster/flight/cockpit/dc_layout.h"
 #include "tie_remaster/flight/render_math.h"
 #include "tie_remaster/flight/renderer_internal.h"
+#include "tie_remaster/flight/tftc_ships.h"
 #include "tie_runtime/presentation/presentation.h"
 
 #include <math.h>
@@ -21,8 +22,101 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* How far the view is raised inside the cockpit. */
-#define TIE_FLIGHT_COCKPIT3D_PITCH_DOWN_DEG 6.0f
+/* Horizontal field of view without a .dc xwahacker_fov: the XWAU cockpits' usual one. */
+#define TIE_FLIGHT_COCKPIT3D_FOV_DEG 88.0f
+
+static float s_cockpit3d_fov_deg = TIE_FLIGHT_COCKPIT3D_FOV_DEG;
+
+static void TieFlightCockpit3d_Transform(const float m[16], const float p[3], float w, float out[4]);
+
+float TieFlightCockpit3d_FovDeg(void) { return s_cockpit3d_fov_deg; }
+
+/* Where the targeting computer screen sits from the eye in the XWA cockpits
+ * whose [CockpitPov] fits them (the TIE fighters and bomber), OPT units. */
+#define TIE_FLIGHT_COCKPIT3D_SCREEN_FROM_EYE_Y (-25.0f)
+#define TIE_FLIGHT_COCKPIT3D_SCREEN_FROM_EYE_Z (-11.0f)
+#define TIE_FLIGHT_COCKPIT3D_EYE_TOLERANCE 20.0f
+
+/* TFTC replaced some XWA cockpits (the assault gunboat's and missile boat's)
+ * whose built-in POV no longer fits the model. When the eye is far from
+ * where it sits in the others, relative to the targeting computer screen,
+ * it moves there instead. */
+static void TieFlightCockpit3d_CheckEye(TieFlightRenderer* g, const char* model) {
+	if (!g->cockpit3d_dc_loaded)
+		return;
+	for (int i = 0; i < g->cockpit3d_dc.count; ++i) {
+		const TieDcScreen* screen = &g->cockpit3d_dc.screens[i];
+		if (screen->source != TIE_DC_TARGETING || screen->triangle_count <= 0)
+			continue;
+		float centre[3] = { 0.0f, 0.0f, 0.0f };
+		for (int t = 0; t < screen->triangle_count; ++t)
+			for (int v = 0; v < 3; ++v)
+				for (int k = 0; k < 3; ++k)
+					centre[k] += screen->triangles[t].position[v][k] / (float)(screen->triangle_count * 3);
+		const float expected[3] = {
+			centre[0],
+			centre[1] - TIE_FLIGHT_COCKPIT3D_SCREEN_FROM_EYE_Y * AERON_OPT_METERS_PER_UNIT,
+			centre[2] - TIE_FLIGHT_COCKPIT3D_SCREEN_FROM_EYE_Z * AERON_OPT_METERS_PER_UNIT,
+		};
+		float distance = 0.0f;
+		for (int k = 0; k < 3; ++k)
+			distance += (expected[k] - g->cockpit3d_eye[k]) * (expected[k] - g->cockpit3d_eye[k]);
+		if (sqrtf(distance) * AERON_OPT_UNITS_PER_METER <= TIE_FLIGHT_COCKPIT3D_EYE_TOLERANCE)
+			return;
+		memcpy(g->cockpit3d_eye, expected, sizeof expected);
+		Aeron_LogInfo("tie.cockpit3d", "%s: POV does not fit the model; eye set from the targeting computer at %.0f %.0f %.0f",
+					  model, expected[0] * AERON_OPT_UNITS_PER_METER, expected[1] * AERON_OPT_UNITS_PER_METER,
+					  expected[2] * AERON_OPT_UNITS_PER_METER);
+		return;
+	}
+}
+
+/* The pilot's eye in the cockpit model (metres): the craft's [CockpitPov]
+ * from FlightModels/<Craft>.ini, copied beside the cockpit as <Name>.ini.
+ * TFTC ships the section disabled as "[CockpitPov;]" to document XWA's
+ * built-in values, which are the ones XWA uses, so it is read either way. */
+static void TieFlightCockpit3d_LoadEye(TieFlightRenderer* g, const char* model) {
+	g->cockpit3d_eye[0] = g->cockpit3d_eye[1] = g->cockpit3d_eye[2] = 0.0f;
+	char path[96];
+	snprintf(path, sizeof path, "cockpit3d/%s.ini", model);
+	uint8_t* bytes = NULL;
+	size_t size = 0;
+	if (!AeronVfs_ReadAll(g->assets->vfs, AERON_VFS_ROOT_RESOURCE, path, 1024u * 1024u, &bytes, &size))
+		return;
+	char* text = malloc(size + 1);
+	if (!text) {
+		free(bytes);
+		return;
+	}
+	memcpy(text, bytes, size);
+	text[size] = '\0';
+	free(bytes);
+	float pov[3] = { 0.0f, 0.0f, 0.0f };
+	bool in_section = false;
+	for (char* line = strtok(text, "\n"); line; line = strtok(NULL, "\n")) {
+		while (*line == ' ' || *line == '\t')
+			++line;
+		if (line[0] == '[') {
+			in_section = strncmp(line, "[CockpitPov", 11) == 0;
+			continue;
+		}
+		static const char* const keys[3] = { "CockpitPovX", "CockpitPovY", "CockpitPovZ" };
+		for (int k = 0; k < 3 && in_section; ++k) {
+			const size_t length = strlen(keys[k]);
+			if (strncmp(line, keys[k], length) == 0) {
+				const char* equals = strchr(line + length, '=');
+				if (equals)
+					pov[k] = strtof(equals + 1, NULL);
+			}
+		}
+	}
+	free(text);
+	/* XWA's POV Y counts forward, which is -Y in the OPT. */
+	pov[1] = -pov[1];
+	for (int k = 0; k < 3; ++k)
+		g->cockpit3d_eye[k] = pov[k] * AERON_OPT_METERS_PER_UNIT;
+	Aeron_LogInfo("tie.cockpit3d", "%s: eye at %.0f %.0f %.0f", path, pov[0], pov[1], pov[2]);
+}
 
 typedef struct TieFlightCockpit3dModel {
 	const char* view_prefix; /* PanelViewDef.name prefix, uppercase */
@@ -73,10 +167,13 @@ void TieFlightCockpit3d_Release(TieFlightRenderer* g) {
 	g->cockpit3d_mesh_count = 0;
 	g->cockpit3d_model = NULL;
 	g->cockpit3d_active = false;
+	TieDcLayout_Free(&g->cockpit3d_dc);
+	g->cockpit3d_dc_loaded = false;
 }
 
 static bool TieFlightCockpit3d_BuildChunk(TieFlightRenderer* g, AeronCommandBuffer* cmd, const uint8_t* bytes,
-										  size_t size, const char* path, int first, int count) {
+										  size_t size, const char* path, const TieFlightTftcMaterialSet* materials,
+										  int first, int count) {
 	AeronFlightModel built = { 0 };
 	AeronOptModelError error = { 0 };
 	if (!Aeron_OptModelBuildMemory(bytes, size, path,
@@ -84,6 +181,8 @@ static bool TieFlightCockpit3d_BuildChunk(TieFlightRenderer* g, AeronCommandBuff
 									   .smooth_angle_degrees = g->assets->smooth_angle_degrees,
 									   .emissive_strength = 1.0f,
 									   .emissive = true,
+									   .material_overrides = materials->overrides,
+									   .material_override_count = materials->count,
 									   /* XWA cockpits carry far more texture than a ship. */
 									   .max_atlas_size = 8192,
 									   .mesh_first = first,
@@ -123,17 +222,51 @@ static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cm
 		return;
 	}
 	const int total = opt->mesh_count;
+
+	/* Where the cockpit shows each HUD display, from DynamicCockpit/<Name>.dc. */
+	char dc_path[96];
+	snprintf(dc_path, sizeof dc_path, "cockpit3d/%s.dc", model);
+	uint8_t* dc_bytes = NULL;
+	size_t dc_size = 0;
+	if (AeronVfs_ReadAll(g->assets->vfs, AERON_VFS_ROOT_RESOURCE, dc_path, 1024u * 1024u, &dc_bytes, &dc_size)) {
+		char* dc_text = malloc(dc_size + 1);
+		if (dc_text) {
+			memcpy(dc_text, dc_bytes, dc_size);
+			dc_text[dc_size] = '\0';
+			g->cockpit3d_dc_loaded = TieDcLayout_Build(dc_text, opt, &g->cockpit3d_dc);
+			free(dc_text);
+		}
+		free(dc_bytes);
+		Aeron_LogInfo("tie.cockpit3d", "%s: %d HUD screens", dc_path,
+					  g->cockpit3d_dc_loaded ? g->cockpit3d_dc.count : 0);
+	} else {
+		Aeron_LogWarn("tie.cockpit3d", "%s not found; the HUD stays flat", dc_path);
+	}
+	s_cockpit3d_fov_deg = g->cockpit3d_dc_loaded && g->cockpit3d_dc.fov_deg > 0.0f ? g->cockpit3d_dc.fov_deg
+																				   : TIE_FLIGHT_COCKPIT3D_FOV_DEG;
+	TieFlightCockpit3d_LoadEye(g, model);
+	TieFlightCockpit3d_CheckEye(g, model);
 	opt_free(opt);
+
+	/* The cockpit's XWA effects materials, from <Name>.mat beside it. */
+	char mat_path[96];
+	snprintf(mat_path, sizeof mat_path, "cockpit3d/%s.mat", model);
+	TieFlightTftcMaterialSet materials;
+	if (!TieFlightTftc_LoadMaterials(g->assets->vfs, mat_path, &materials)) {
+		free(bytes);
+		return;
+	}
 
 	int first = 0;
 	while (first < total && g->cockpit3d_mesh_count < TIE_FLIGHT_COCKPIT3D_MAX_CHUNKS) {
 		int count = total - first;
-		while (!TieFlightCockpit3d_BuildChunk(g, cmd, bytes, size, path, first, count) && count > 1)
+		while (!TieFlightCockpit3d_BuildChunk(g, cmd, bytes, size, path, &materials, first, count) && count > 1)
 			count = (count + 1) / 2;
 		if (count == 1 && g->cockpit3d_mesh_count == 0)
 			Aeron_LogWarn("tie.cockpit3d", "%s: mesh %d could not be built", path, first);
 		first += count;
 	}
+	TieFlightTftc_FreeMaterials(&materials);
 	free(bytes);
 	uint32_t vertices = 0;
 	for (uint32_t i = 0; i < g->cockpit3d_mesh_count; ++i)
@@ -159,23 +292,17 @@ void TieFlightCockpit3d_Submit(TieFlightRenderer* g, const TieSnapshot* curr, co
 		TieFlightCockpit3d_ModelForView(curr->cockpit.view_name) != g->cockpit3d_model)
 		return;
 
-	/* The model origin is the pilot's eye. It turns with the craft, not the
-	 * camera, so side and rear views look at the matching part of it. */
+	/* The model turns with the craft, not the camera, so side and rear views
+	 * look at the matching part of it. The eye sits at the craft's cockpit POV
+	 * in the model, as in XWA, so the model moves back by it. */
 	float transform[16];
 	float craft_transform[16];
 	TieRenderMath_Mat4FromQuaternionTranslation(craft_transform, craft->ori, cam_pos, AERON_OPT_UNITS_PER_METER);
-	/* Slide the model from the eye as the cockpit editor sets (OPT +X right,
-	 * +Z up; model space is in metres), then pitch it down about the eye so
-	 * the view sits higher in the cockpit while the world and reticle stay put. */
-	float pan_x, pan_y, fov_deg;
-	TieCockpitEditor_View(&pan_x, &pan_y, &fov_deg);
-	const float pitch = TIE_FLIGHT_COCKPIT3D_PITCH_DOWN_DEG * 3.14159265f / 180.0f;
-	const float cp = cosf(pitch), sp = sinf(pitch);
-	const float slide_x = pan_x * AERON_OPT_METERS_PER_UNIT, slide_z = pan_y * AERON_OPT_METERS_PER_UNIT;
-	const float slide_then_pitch[16] = {
-		1.0f, 0.0f, 0.0f, slide_x, 0.0f, cp, -sp, 0.0f, 0.0f, sp, cp, slide_z, 0.0f, 0.0f, 0.0f, 1.0f,
+	const float* eye = g->cockpit3d_eye;
+	const float to_eye[16] = {
+		1.0f, 0.0f, 0.0f, -eye[0], 0.0f, 1.0f, 0.0f, -eye[1], 0.0f, 0.0f, 1.0f, -eye[2], 0.0f, 0.0f, 0.0f, 1.0f,
 	};
-	TieRenderMath_Mat4Multiply(transform, craft_transform, slide_then_pitch);
+	TieRenderMath_Mat4Multiply(transform, craft_transform, to_eye);
 	for (uint32_t i = 0; i < g->cockpit3d_mesh_count; ++i) {
 		AeronSceneMeshInstance in;
 		memset(&in, 0, sizeof in);
@@ -198,6 +325,19 @@ bool TieFlightRenderer_Cockpit3dActive(const TieFlightRenderer* g) { return g &&
 
 const char* TieFlightRenderer_Cockpit3dModel(const TieFlightRenderer* g) {
 	return g && g->cockpit3d_active ? g->cockpit3d_model : NULL;
+}
+
+const TieDcLayout* TieFlightRenderer_Cockpit3dLayout(const TieFlightRenderer* g) {
+	return g && g->cockpit3d_active && g->cockpit3d_dc_loaded ? &g->cockpit3d_dc : NULL;
+}
+
+bool TieFlightRenderer_Cockpit3dProject(const TieFlightRenderer* g, const float model[3], float clip[4]) {
+	if (!g || !g->cockpit3d_active)
+		return false;
+	float local[4];
+	TieFlightCockpit3d_Transform(g->cockpit3d_transform, model, 1.0f, local);
+	TieFlightRenderer_ProjectLocal(g, local, clip);
+	return clip[3] > 1e-4f;
 }
 
 /* General 4x4 inverse (row-major); false when singular. */

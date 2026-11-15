@@ -61,3 +61,7 @@ tools/matching/
 
 # Wide cockpit art generated from the original game data (not redistributable)
 resources/cockpit/
+
+# TFTC ship models copied from a TFTC install (not redistributable)
+resources/tftc/
+resources/cockpit3d/

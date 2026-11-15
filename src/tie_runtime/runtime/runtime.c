@@ -129,6 +129,12 @@ bool TieRuntime_Init(const TieRuntimeConfig* config, char* error, size_t error_c
 		 * can only be selected once it has been started on the flight scene. */
 		TieShell_Begin(SCENE_FLIGHT_BATTLE, 1);
 		if (config->skip_pilot && shipext_Load_Pilot(config->skip_pilot)) {
+			if (config->skip_battle > 0 && config->skip_battle <= NUM_BATTLES && config->skip_mission > 0) {
+				const int battle = config->skip_battle - 1;
+				pilot_record.cur_battle = (uint8_t)battle;
+				pilot_record.battle_status[battle] = 1;
+				pilot_record.battle_cursor[battle] = (uint8_t)(config->skip_mission - 1);
+			}
 			shipext_Set_Tour_Battle();
 			TieDiagnostics_Log(TIE_LOG_INFO, "[SKIP] pilot %s, mission %s\n", config->skip_pilot,
 							   shipext_Get_Mission_Name());

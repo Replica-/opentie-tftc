@@ -3,12 +3,14 @@
 [![GitHub Release](https://img.shields.io/github/v/release/elyosh/OpenTIE)](https://github.com/elyosh/OpenTIE/releases/latest)
 [![Visit our Discord server](https://img.shields.io/discord/1533001488391995442)](https://discord.gg/WBvYzczWfG)
 
-![Screenshot of OpenTIE](assets/opentie-001.jpg)
+![A TFTC TIE fighter wingman and Star Destroyer seen from the TFTC TIE fighter cockpit](assets/opentie-tftc-tie-fighter.jpg)
 
-![TIE fighter TFTC cockpit in flight with its HUD on the cockpit's screens](assets/opentie-tftc-cockpit.jpg)
+![A TFTC capital ship close alongside the TIE fighter cockpit](assets/opentie-tftc-capital-ship.jpg)
 
-*The X-Wing Alliance Upgrade TIE fighter cockpit by DTM (not included with OpenTIE) with the HUD on the
-cockpit's own screens, as its Dynamic Cockpit file lays it out.*
+![The TFTC TIE bomber cockpit with the HUD on its screens](assets/opentie-tftc-tie-bomber.jpg)
+
+*TIE Fighter Total Conversion's ship models and cockpits (not included with OpenTIE) in flight, with the HUD on
+each cockpit's own screens as its Dynamic Cockpit file lays it out.*
 
 OpenTIE is an open-source reimplementation of *Star Wars: TIE Fighter* for
 Windows, macOS, and Linux. It runs the original game data natively on current
@@ -242,7 +244,7 @@ machine.
 
 | Option | Effect |
 |---|---|
-| `--skip-to-mission <pilot>` | Loads the named pilot and starts their current tour battle mission, skipping the menus |
+| `--skip-to-mission <pilot> [battle mission]` | Loads the named pilot and starts their current tour battle mission, or the given one (`1 3` for battle 1, mission 3), skipping the menus |
 | `--headless` | Creates a hidden window, treats it as always focused, and discards audio |
 | `--capture <file.png> [seconds]` | Saves the flight view as a PNG once flight has run for the given time (default 6), then quits |
 | `--music <source>` | Uses that music source (`imuse`, `tie98` or `tftc`) for this run without changing the saved setting |

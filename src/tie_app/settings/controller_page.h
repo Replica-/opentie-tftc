@@ -6,27 +6,26 @@
 
 #include "aeron/scene/ui.h"
 #include "tie_app/config/app_config.h"
-#include "tie_app/settings/bindings_editor.h"
 
 #define TIE_CONTROLLER_SETTINGS_ERROR_CAPACITY 512
 
+/* The controller page lists every connected device, numbered, above one list
+ * of every flight axis and action. A row's Modify listens to all devices, so
+ * a stick and a separate throttle are bound from the same list. */
 typedef struct TieControllerSettings {
-	TieBindingsEditor editor;
 	TieControllerOptions original;
 	TieControllerOptions draft;
-	TieControllerProfile unconfigured;
-	char selected_guid[33];
-	uint32_t selected_instance;
-	char conflict_text[512];
-	bool capacity_warned;
-	int page;
-	int axis;
+	size_t row_selected; /* SIZE_MAX = none */
+	/* A captured control waiting on a conflict dialog. */
+	uint32_t pending_instance;
 	TieInputAxis pending_axis;
 	int pending_axis_source;
-	int conflicting_axis;
 	AeronControllerDigitalSource pending_digital;
+	TieInputAction pending_action;
+	bool pending_replace;
 	TieInputAction conflicting_action;
-	uint32_t active_instance;
+	char conflict_text[512];
+	bool capacity_warned;
 	int axis_conflict_open;
 	int binding_conflict_open;
 	int restore_modal_open;

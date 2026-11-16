@@ -3439,6 +3439,9 @@ static void TieCockpitRenderer_DrawDcShieldRing(const struct TieCockpitRendererS
 	}
 }
 
+/* Where a radar's rim sits in its screen, as a fraction of the screen's size. */
+#define TIE_DC_RADAR_RIM 0.42f
+
 /* XWA's radar screen under the blips: a dark glass over the cockpit's dimly
  * lit radar backdrop, with a short white tick at each quarter of its rim. */
 static void TieCockpitRenderer_DrawDcRadarBackdrop(const struct TieCockpitRendererSurface* surface) {
@@ -3451,7 +3454,7 @@ static void TieCockpitRenderer_DrawDcRadarBackdrop(const struct TieCockpitRender
 		.fill_bottom = { 0.0f, 0.0f, 0.0f, glass },
 	};
 	AeronDrawList_AddRRect(surface->list, &fill);
-	const float cx = w * 0.5f, cy = h * 0.5f, r = fminf(w, h) * 0.42f;
+	const float cx = w * 0.5f, cy = h * 0.5f, r = fminf(w, h) * TIE_DC_RADAR_RIM;
 	const float length = fminf(w, h) * 0.08f, stroke = fmaxf(fminf(w, h) * 0.012f, 1.5f);
 	const float ticks[4][4] = {
 		{ cx - stroke * 0.5f, cy - r - length * 0.5f, stroke, length },
@@ -4130,6 +4133,21 @@ static void TieCockpitRenderer_BeginDcSurfaces(TieCockpitRenderer* cg, const Tie
 		/* Instruments are anchored at a point; leave room for what they draw. */
 		const float pad = TieCockpitRenderer_DcTextSource(dc_screen->source) ? 1.0f : 12.0f;
 		float hw = (x1 - x0) * 0.5f + pad, hh = (y1 - y0) * 0.5f + pad;
+		if (dc_screen->source == TIE_DC_LEFT_SENSOR || dc_screen->source == TIE_DC_RIGHT_SENSOR) {
+			/* A radar is anchored at its centre with no extent: the screen
+			 * spans its disc, the rim on the backdrop's rim ticks, so a blip
+			 * at the edge still shows. */
+			const int radar_id = dc_screen->source == TIE_DC_LEFT_SENSOR ? TIE_HUDI_RADAR_LEFT : TIE_HUDI_RADAR_RIGHT;
+			float radius = (float)TieCockpitLayout_RadarRadius(&entry->layout, radar_id);
+			if (radius <= 0.0f) {
+				float sx, sy;
+				TieCockpitLayout_ClassicPixelSize(&entry->layout, (int)snap->cockpit.classic_w,
+												  (int)snap->cockpit.classic_h, &sx, &sy);
+				radius = (float)snap->hud.radar_classic_radius * sx;
+			}
+			if (radius > 0.0f)
+				hw = hh = (radius + 1.0f) / (2.0f * TIE_DC_RADAR_RIM);
+		}
 		if (dc_screen->aspect > 0.0f) {
 			const float aspect = dc_screen->aspect;
 			if (hw / hh < aspect)

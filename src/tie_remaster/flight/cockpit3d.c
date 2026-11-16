@@ -41,46 +41,6 @@ static void TieFlightCockpit3d_Transform(const float m[16], const float p[3], fl
 
 float TieFlightCockpit3d_FovDeg(void) { return s_cockpit3d_fov_deg; }
 
-/* Where the targeting computer screen sits from the eye in the XWA cockpits
- * whose [CockpitPov] fits them (the TIE fighters and bomber), OPT units. */
-#define TIE_FLIGHT_COCKPIT3D_SCREEN_FROM_EYE_Y (-25.0f)
-#define TIE_FLIGHT_COCKPIT3D_SCREEN_FROM_EYE_Z (-11.0f)
-#define TIE_FLIGHT_COCKPIT3D_EYE_TOLERANCE 20.0f
-
-/* TFTC replaced some XWA cockpits (the assault gunboat's and missile boat's)
- * whose built-in POV no longer fits the model. When the eye is far from
- * where it sits in the others, relative to the targeting computer screen,
- * it moves there instead. */
-static void TieFlightCockpit3d_CheckEye(TieFlightRenderer* g, const char* model) {
-	if (!g->cockpit3d_dc_loaded)
-		return;
-	for (int i = 0; i < g->cockpit3d_dc.count; ++i) {
-		const TieDcScreen* screen = &g->cockpit3d_dc.screens[i];
-		if (screen->source != TIE_DC_TARGETING || screen->triangle_count <= 0)
-			continue;
-		float centre[3] = { 0.0f, 0.0f, 0.0f };
-		for (int t = 0; t < screen->triangle_count; ++t)
-			for (int v = 0; v < 3; ++v)
-				for (int k = 0; k < 3; ++k)
-					centre[k] += screen->triangles[t].position[v][k] / (float)(screen->triangle_count * 3);
-		const float expected[3] = {
-			centre[0],
-			centre[1] - TIE_FLIGHT_COCKPIT3D_SCREEN_FROM_EYE_Y * AERON_OPT_METERS_PER_UNIT,
-			centre[2] - TIE_FLIGHT_COCKPIT3D_SCREEN_FROM_EYE_Z * AERON_OPT_METERS_PER_UNIT,
-		};
-		float distance = 0.0f;
-		for (int k = 0; k < 3; ++k)
-			distance += (expected[k] - g->cockpit3d_eye[k]) * (expected[k] - g->cockpit3d_eye[k]);
-		if (sqrtf(distance) * AERON_OPT_UNITS_PER_METER <= TIE_FLIGHT_COCKPIT3D_EYE_TOLERANCE)
-			return;
-		memcpy(g->cockpit3d_eye, expected, sizeof expected);
-		Aeron_LogInfo("tie.cockpit3d", "%s: POV does not fit the model; eye set from the targeting computer at %.0f %.0f %.0f",
-					  model, expected[0] * AERON_OPT_UNITS_PER_METER, expected[1] * AERON_OPT_UNITS_PER_METER,
-					  expected[2] * AERON_OPT_UNITS_PER_METER);
-		return;
-	}
-}
-
 /* The pilot's eye in the cockpit model (metres): the craft's [CockpitPov]
  * from FlightModels/<Craft>.ini, copied beside the cockpit as <Name>.ini.
  * TFTC ships the section disabled as "[CockpitPov;]" to document XWA's
@@ -123,6 +83,19 @@ static void TieFlightCockpit3d_LoadEye(TieFlightRenderer* g, const char* model) 
 	free(text);
 	/* XWA's POV Y counts forward, which is -Y in the OPT. */
 	pov[1] = -pov[1];
+	/* TFTC's assault gunboat and missile boat cockpits sit further from the
+	 * eye than their .ini POV puts them (which would hang the missile boat's
+	 * 3 m up): these eyes put their targeting screens where TFTC shows them. */
+	static const struct {
+		const char* model;
+		float eye[3];
+	} k_eyes[] = {
+		{ "AssaultGunboatCockpit", { 0.0f, -43.0f, 14.0f } },
+		{ "MissileBoatCockpit", { 0.0f, -131.0f, 18.0f } },
+	};
+	for (size_t i = 0; i < sizeof k_eyes / sizeof k_eyes[0]; ++i)
+		if (strcmp(k_eyes[i].model, model) == 0)
+			memcpy(pov, k_eyes[i].eye, sizeof pov);
 	for (int k = 0; k < 3; ++k)
 		g->cockpit3d_eye[k] = pov[k] * AERON_OPT_METERS_PER_UNIT;
 	Aeron_LogInfo("tie.cockpit3d", "%s: eye at %.0f %.0f %.0f", path, pov[0], pov[1], pov[2]);
@@ -516,7 +489,6 @@ static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cm
 	}
 	free(cover_text);
 	TieFlightCockpit3d_LoadEye(g, model);
-	TieFlightCockpit3d_CheckEye(g, model);
 	free(shown_meshes);
 	opt_free(opt);
 

@@ -3469,24 +3469,6 @@ static void TieCockpitRenderer_DcFill(AeronDrawList2D* list, float x, float y, f
 	AeronDrawList_AddRRect(list, &rect);
 }
 
-/* `lit` of `segments` blocks along the longer side of a gauge target, from
- * the left or the bottom; `split` and above take the second colour. */
-static void TieCockpitRenderer_DcSegments(AeronDrawList2D* list, float w, float h, int segments, int lit, int split,
-										  const float first[3], const float second[3]) {
-	const bool along_x = w >= h;
-	const float length = along_x ? w : h, gap = length * 0.04f, step = (length + gap) / (float)segments;
-	for (int i = 0; i < segments; ++i) {
-		const float at = along_x ? (float)i * step : h - (float)(i + 1) * step + gap;
-		const float x = along_x ? at : 0.0f, y = along_x ? 0.0f : at;
-		const float sw = along_x ? step - gap : w, sh = along_x ? h : step - gap;
-		const float* colour = i < split ? first : second;
-		if (i < lit)
-			TieCockpitRenderer_DcFill(list, x, y, sw, sh, colour[0], colour[1], colour[2], 1.0f);
-		else
-			TieCockpitRenderer_DcFill(list, x, y, sw, sh, 0.02f, 0.06f, 0.03f, 0.95f);
-	}
-}
-
 /* True when instrument `id` is not drawn as itself on this cockpit: a DC
  * gauge stands in for it, or it belongs to a display the cockpit has no
  * screen for, which XWA leaves off the HUD too. */
@@ -3715,24 +3697,36 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 			TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, w * lit, h, 1.0f, 0.92f, 0.15f, 1.0f);
 		return;
 	}
-	/* Recharge strips: one segment per power step (0..4, 2 normal), yellow above normal. */
+	/* XWA's recharge screens: a solid bar of the system's energy, lasers
+	 * green, shields yellow, beam magenta (full rings on the TIE Avenger at
+	 * a mission's start), dark on a craft without the system. The bar fills
+	 * from the left or the bottom. */
 	const uint16_t cap = snap->hud.working_subsystems;
-	const uint16_t sub = snap->hud.subsystem_active;
-	int level;
-	if (source == TIE_DC_LASER_POWER && (cap & 0x200u))
-		level = snap->hud.laser_power;
-	else if (source == TIE_DC_SHIELD_POWER && (cap & 0x800u) && (sub & 0x001u))
-		level = snap->hud.shield_power;
-	else if (source == TIE_DC_BEAM_POWER && (cap & 0x1000u) && (sub & 0x100u))
-		level = snap->hud.beam_power;
-	else
-		level = 0; /* a system the craft lacks or has off: every segment dark */
-	/* XWA colours each system's recharge: lasers green, shields yellow,
-	 * beam magenta. */
+	float fraction = 0.0f;
+	if (source == TIE_DC_LASER_POWER && (cap & 0x200u)) {
+		for (int gr = 0; gr < snap->hud.weapon_group_cnt && gr < 8; ++gr) {
+			const TieHudInstrument* ins = &snap->hud.instruments[TIE_HUDI_LASER_LED_FIRST + gr];
+			if (TieCockpitCommon_InstrumentActive(ins) && ins->color != 0)
+				fraction = fmaxf(fraction, (float)(ins->value < 0 ? 0 : ins->value > 10 ? 10 : ins->value) / 10.0f);
+		}
+	} else if (source == TIE_DC_SHIELD_POWER && (cap & 0x800u)) {
+		const int front = TieCockpitRenderer_DcShieldPercent(snap, true), rear = TieCockpitRenderer_DcShieldPercent(snap, false);
+		fraction = fminf((float)((front > 0 ? front : 0) + (rear > 0 ? rear : 0)) / 200.0f, 1.0f);
+	} else if (source == TIE_DC_BEAM_POWER && (cap & 0x1000u)) {
+		const TieHudInstrument* ins = &snap->hud.instruments[TIE_HUDI_BEAM_ARC];
+		fraction = TieCockpitCommon_InstrumentActive(ins) && ins->value > 0 ? fminf((float)ins->value / 7.0f, 1.0f) : 0.0f;
+	}
 	static const float k_laser[3] = { 0.1f, 0.9f, 0.2f }, k_shield[3] = { 0.95f, 0.85f, 0.1f },
 					   k_beam[3] = { 0.8f, 0.2f, 0.9f };
 	const float* colour = source == TIE_DC_LASER_POWER ? k_laser : source == TIE_DC_SHIELD_POWER ? k_shield : k_beam;
-	TieCockpitRenderer_DcSegments(surface->list, w, h, 4, level, 4, colour, colour);
+	TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, w, h, 0.004f, 0.012f, 0.006f, 1.0f);
+	if (fraction > 0.0f) {
+		if (w >= h)
+			TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, w * fraction, h, colour[0], colour[1], colour[2], 1.0f);
+		else
+			TieCockpitRenderer_DcFill(surface->list, 0.0f, h * (1.0f - fraction), w, h * fraction, colour[0], colour[1],
+									  colour[2], 1.0f);
+	}
 }
 
 /* `text` without the 0xFE colour escapes panel_buildobjectname leaves in it. */
@@ -3826,12 +3820,12 @@ static void TieCockpitRenderer_DrawDcTargeting(TieCockpitRenderer* cg, const str
 	AeronTexture* pip_texture = cg->flight_gpu ? TieFlightRenderer_PipTexture(cg->flight_gpu) : NULL;
 	if (pip_texture && snap->cockpit.pip_target_present && snap->cockpit.pip_w && snap->cockpit.pip_h) {
 		const float aspect = (float)snap->cockpit.pip_w / (float)snap->cockpit.pip_h;
-		float view_h = h * 0.6f, view_w = view_h * aspect;
-		if (view_w > w * 0.4f) {
-			view_w = w * 0.4f;
+		float view_h = h * 0.68f, view_w = view_h * aspect;
+		if (view_w > w * 0.46f) {
+			view_w = w * 0.46f;
 			view_h = view_w / aspect;
 		}
-		const float x0 = (w - view_w) * 0.5f, y0 = h * 0.28f + (h * 0.6f - view_h) * 0.5f;
+		const float x0 = (w - view_w) * 0.5f, y0 = h * 0.24f + (h * 0.68f - view_h) * 0.5f;
 		const float x1 = x0 + view_w, y1 = y0 + view_h;
 		AeronDrawList2DQuad4 quad = {
 			.texture = pip_texture,
@@ -3839,15 +3833,16 @@ static void TieCockpitRenderer_DrawDcTargeting(TieCockpitRenderer* cg, const str
 			.blend = AERON_BLIT2D_BLEND_PMA,
 			.filter = AERON_BLIT2D_FILTER_LINEAR,
 			.q = { 1.0f, 1.0f, 1.0f, 1.0f },
-			.corners = { { x0, y0, 0.0f, 0.0f }, { x1, y0, 1.0f, 0.0f }, { x0, y1, 0.0f, 1.0f }, { x1, y1, 1.0f, 1.0f } },
+			/* The PIP frames its target with a margin XWA's wireframe has not: the middle of it fills the view. */
+			.corners = { { x0, y0, 0.12f, 0.12f }, { x1, y0, 0.88f, 0.12f }, { x0, y1, 0.12f, 0.88f }, { x1, y1, 0.88f, 0.88f } },
 		};
 		AeronDrawList_AddQuad4(list, &quad);
 	}
 
-	const float left = w * 0.14f, right = w * 0.86f, row_h = h * 0.065f;
+	const float left = w * 0.14f, right = w * 0.86f, row_h = h * 0.058f;
 	char text[48];
 	TieCockpitRenderer_DcPlainText(hud->target_name, text, sizeof text);
-	TieCockpitRenderer_DcText(cg, list, w * 0.5f, h * 0.13f, h * 0.085f, AERON_TEXT_CENTER, text, k_red, &clip);
+	TieCockpitRenderer_DcText(cg, list, w * 0.5f, h * 0.12f, h * 0.1f, AERON_TEXT_CENTER, text, k_red, &clip);
 	if (hud->target_order_text[0]) {
 		TieCockpitRenderer_DcPlainText(hud->target_order_text, text, sizeof text);
 		TieCockpitRenderer_DcText(cg, list, w * 0.5f, h * 0.215f, h * 0.055f, AERON_TEXT_CENTER, text, k_orange, &clip);
@@ -4116,7 +4111,7 @@ static void TieCockpitRenderer_DrawDcEffects(TieCockpitRenderer* cg, bool over) 
 		}
 		return;
 	}
-	static const float k_cover[4] = { 0.55f, 0.55f, 0.55f, 1.0f }, k_light[4] = { 0.15f, 0.15f, 0.15f, 0.0f };
+	static const float k_cover[4] = { 0.3f, 0.3f, 0.3f, 1.0f }, k_light[4] = { 0.15f, 0.15f, 0.15f, 0.0f };
 	for (int pass = 0; effects && pass < 2; ++pass)
 		for (int e = 0; e < effects->count; ++e) {
 			const TieDcEffect* effect = &effects->items[e];

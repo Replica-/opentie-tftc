@@ -11,7 +11,7 @@ static int TieMain_Usage(const char* message, const char* argument) {
 		fprintf(stderr, "[tie-aeron] "), fprintf(stderr, message, argument), fputc('\n', stderr);
 	else if (message)
 		fprintf(stderr, "[tie-aeron] %s\n", message);
-	fprintf(stderr, "Usage: tie [--tie95-data <dir>] [--tie98-data <dir>] [--resource-root <dir>] [--skip-to-mission <pilot> [battle mission]] [--missions <file,file...>] [--headless] [--capture <file.png> [seconds]] [--music imuse|tie98|tftc]\n");
+	fprintf(stderr, "Usage: tie [--tie95-data <dir>] [--tie98-data <dir>] [--resource-root <dir>] [--skip-to-mission <pilot> [battle mission]] [--missions <file,file...>] [--headless] [--capture <file.png> [seconds]] [--press <keys>] [--music imuse|tie98|tftc]\n");
 	return 2;
 }
 
@@ -49,6 +49,13 @@ static int TieMain_ParseOptions(int argc, char* argv[], TieLaunchOptions* out) {
 			out->capture_after_seconds = 6.0f;
 			if (index + 1 < argc && argv[index + 1][0] >= '0' && argv[index + 1][0] <= '9')
 				out->capture_after_seconds = (float)atof(argv[++index]);
+			continue;
+		}
+		if (strcmp(argument, "--press") == 0) {
+			/* --press <keys>: with --capture, type these keys into flight first (t selects a target). */
+			if (index + 1 >= argc || argv[index + 1][0] == '-')
+				return TieMain_Usage("option requires keys: %s", "--press");
+			out->press_keys = argv[++index];
 			continue;
 		}
 		if (strcmp(argument, "--skip-to-mission") == 0 ||

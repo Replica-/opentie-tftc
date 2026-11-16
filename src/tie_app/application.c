@@ -421,7 +421,7 @@ int TieApplication_Run(const TieLaunchOptions* launch) {
 			.point_lights = app_config.requested.point_lights,
 	};
 	if (launch->capture_path)
-		TieRemaster_RequestCapture(launch->capture_path, launch->capture_after_seconds);
+		TieRemaster_RequestCapture(launch->capture_path, launch->capture_after_seconds, launch->press_keys);
 	if (!Aeron_FatalErrorRequested() && !TieRemaster_Init(startup_cmd, &remaster_config) &&
 		!Aeron_FatalErrorRequested()) {
 		Aeron_RequestFatalRendererError("remaster initialization");

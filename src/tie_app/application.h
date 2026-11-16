@@ -10,6 +10,7 @@ typedef struct TieLaunchOptions {
 	bool headless; /* hidden window, always focused */
 	const char* capture_path; /* save the flight view to this PNG, then quit */
 	float capture_after_seconds;
+	const char* press_keys; /* keys typed into flight before the capture, one every half second from 1 s */
 	bool skip_to_mission;
 	const char* skip_pilot; /* pilot file name without .tfr */
 	int skip_battle;        /* 1-based tour battle, or 0 for the pilot's own */

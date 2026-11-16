@@ -1107,13 +1107,17 @@ static struct {
 	uint64_t flight_started_us;
 	bool done;
 	const char* captured; /* the --missions entry already captured */
+	const char* keys;     /* typed into flight, one every half second from 1 s */
+	int keys_pressed;
 } g_capture;
 
-void TieRemaster_RequestCapture(const char* path, float after_seconds) {
+void TieRemaster_RequestCapture(const char* path, float after_seconds, const char* keys) {
 	g_capture.path = path;
 	g_capture.after_seconds = after_seconds;
 	g_capture.flight_started_us = 0;
 	g_capture.done = false;
+	g_capture.keys = keys;
+	g_capture.keys_pressed = 0;
 }
 
 static void TieRemaster_UpdateCapture(const TieSnapshot* snapshot) {
@@ -1131,7 +1135,11 @@ static void TieRemaster_UpdateCapture(const TieSnapshot* snapshot) {
 		return;
 	if (!g_capture.flight_started_us)
 		g_capture.flight_started_us = Aeron_NowUs();
-	if ((float)(Aeron_NowUs() - g_capture.flight_started_us) < g_capture.after_seconds * 1e6f)
+	const float elapsed = (float)(Aeron_NowUs() - g_capture.flight_started_us) * 1e-6f;
+	while (g_capture.keys && g_capture.keys[g_capture.keys_pressed] &&
+		   elapsed >= 1.0f + 0.5f * (float)g_capture.keys_pressed)
+		TieInput_EnqueueDosKey((int16_t)(unsigned char)g_capture.keys[g_capture.keys_pressed++]);
+	if (elapsed < g_capture.after_seconds)
 		return;
 	char mission_path[512];
 	const char* path = g_capture.path;

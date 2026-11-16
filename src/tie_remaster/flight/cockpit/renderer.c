@@ -3286,8 +3286,8 @@ static void TieCockpitRenderer_DrawDcGoals(TieCockpitRenderer* cg, AeronDrawList
 	const float line_h = h / (cg->dc_hologram ? 16.0f : 22.0f), left = w * TIE_DC_TEXT_MARGIN,
 				right = w * (1.0f - TIE_DC_TEXT_MARGIN);
 	const AeronRectI clip = { 1, 1, (int)w - 2, (int)h - 2 };
-	TieCockpitRenderer_DcText(cg, list, right, line_h * 1.2f, line_h * 1.3f, AERON_TEXT_RIGHT, "Mission Goals",
-							  k_dc_white, &clip);
+	TieCockpitRenderer_DcText(cg, list, (left + right) * 0.5f, line_h * 1.2f, line_h * 1.3f, AERON_TEXT_CENTER,
+							  "Mission Goals", k_dc_white, &clip);
 	static const char* const k_outcomes[3] = { "Unresolved", "Victory", "Failed" };
 	float header[4];
 	TieCockpitRenderer_DcPaletteColour(snap, 0x3A, header);
@@ -3321,30 +3321,9 @@ static void TieCockpitRenderer_DrawDcGoals(TieCockpitRenderer* cg, AeronDrawList
 			y += line_h;
 			continue;
 		}
-		/* A goal row is centred when it fits the line; a longer one wraps from
-		 * the left with its continuation indented. */
-		float total = 0.0f;
-		int last = i;
-		for (; last < snap->hud.objective_count && snap->hud.objectives[last].y == snap->hud.objectives[first].y;
-			 ++last) {
-			const AeronTextStyle unit = { .font = &cg->dc_font,
-										  .scale = row_h / (float)(cg->dc_font.cell_h ? cg->dc_font.cell_h : 1) };
-			total += AeronText_MeasureWidth(&unit, snap->hud.objectives[last].text, -1);
-		}
-		if (total <= right - left) {
-			float pen = centre - total * 0.5f;
-			for (; i < last; ++i) {
-				float colour[4];
-				TieCockpitRenderer_DcPaletteColour(snap, snap->hud.objectives[i].color, colour);
-				pen += TieCockpitRenderer_DcText(cg, list, pen, y, row_h, AERON_TEXT_LEFT, snap->hud.objectives[i].text,
-												 colour, &clip);
-			}
-			y += line_h;
-			continue;
-		}
 		TieDcFlow flow = { .top = y, .left = left, .right = right, .indent = left + line_h, .pen = left,
 						   .line_h = line_h, .max_lines = (int)((bottom - y) / line_h) };
-		for (; i < last; ++i) {
+		for (; i < snap->hud.objective_count && snap->hud.objectives[i].y == snap->hud.objectives[first].y; ++i) {
 			float colour[4];
 			TieCockpitRenderer_DcPaletteColour(snap, snap->hud.objectives[i].color, colour);
 			TieCockpitRenderer_DcFlow(cg, list, &flow, snap->hud.objectives[i].text, colour, &clip);

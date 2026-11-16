@@ -232,6 +232,10 @@ static void TieHudSnapshot_CaptureHud(void) {
 		TieHudSnapshot_CaptureGoalsHeader(hud, pc);
 		hud->status_flags = pc->status_flags;
 		hud->weapon_group_cnt = pc->weapon_group_cnt;
+		hud->weapon_ion_mask = 0;
+		for (int k = 0; k < pc->weapon_group_cnt && k < 8; ++k)
+			if (pc->weapon_slots[k].type == 141 || pc->weapon_slots[k].type == 142)
+				hud->weapon_ion_mask |= (uint8_t)(1u << k);
 		if (spec_data[pstate.player_spec_num].missile_count[0] +
 				spec_data[pstate.player_spec_num].missile_count[1] !=
 			0)

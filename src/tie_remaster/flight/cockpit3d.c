@@ -25,9 +25,9 @@
 /* Horizontal field of view without a .dc xwahacker_fov: the XWAU cockpits' usual one. */
 #define TIE_FLIGHT_COCKPIT3D_FOV_DEG 88.0f
 
-/* TFTC's cockpits sit in near darkness, and their self-lit texels (the radar
- * backdrops' grids among them) glow without blooming. */
-#define TIE_FLIGHT_COCKPIT3D_BASE_COLOR 0.35f
+/* TFTC's cockpits sit in dim light, their grey shell still showing its
+ * texture as in XWA, and their self-lit texels glow without blooming. */
+#define TIE_FLIGHT_COCKPIT3D_BASE_COLOR 0.6f
 #define TIE_FLIGHT_COCKPIT3D_GLOW 0.5f
 /* The cockpit takes no shadows (its own hull would black it out), so the
  * sun and sky reach it only weakly, as through the canopy frame. */
@@ -156,8 +156,14 @@ typedef struct TieFlightCockpit3dYoke {
 } TieFlightCockpit3dYoke;
 
 static const TieFlightCockpit3dYoke k_cockpit3d_yokes[] = {
-	/* The column, and the targeting computer between its grips. */
+	/* The column, and the targeting computer between its grips. The TIE
+	 * cockpits share it; the bomber's sits off centre, the Avenger's a
+	 * little further forward and higher. */
 	{ "TieFighterCockpit", { 17, 31 }, 2, { 0.0f, -36.0f, -28.0f }, { 0.0f, 18.0f, 19.0f } },
+	{ "TieInterceptorCockpit", { 3, 10 }, 2, { 0.0f, -36.0f, -28.0f }, { 0.0f, 18.0f, 19.0f } },
+	{ "TieDefenderCockpit", { 3, 10 }, 2, { 0.0f, -36.0f, -28.0f }, { 0.0f, 18.0f, 19.0f } },
+	{ "TieBomberCockpit", { 2, 20 }, 2, { -52.0f, -78.9f, -28.0f }, { 0.0f, 18.0f, 19.0f } },
+	{ "TieAvengerCockpit", { 3, 7 }, 2, { 0.0f, -37.6f, -25.7f }, { 0.0f, 18.0f, 19.0f } },
 };
 
 static const TieFlightCockpit3dYoke* TieFlightCockpit3d_YokeOf(const char* model) {

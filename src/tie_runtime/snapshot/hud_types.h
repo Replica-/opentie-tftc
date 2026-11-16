@@ -162,6 +162,9 @@ typedef struct TieHudState {
 	/* Active player weapon-group count (cp->weapon_group_cnt). Bounds
 	 * the LASER_LED_ROW iteration at indices 3..3+N-1. */
 	uint8_t weapon_group_cnt;
+	/* Bit k set when weapon slot k is an ion cannon (projectile type 141 or
+	 * 142), for the TFTC cockpits' blue charge rows. */
+	uint8_t weapon_ion_mask;
 	/* Hardpoints painted by panel_updateweapons: 0, 2, or 4, from the craft spec. */
 	uint8_t missile_hardpoint_count;
 	uint8_t beam_type;

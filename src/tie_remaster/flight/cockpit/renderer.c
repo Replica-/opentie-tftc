@@ -3910,7 +3910,7 @@ static void TieCockpitRenderer_BeginDcSurfaces(TieCockpitRenderer* cg, const Tie
 			/* XWA projects a hologram text box in the air over a plain grey panel. */
 			if (dc_screen->hologram &&
 				(dc_screen->source == TIE_DC_LEFT_TEXT || dc_screen->source == TIE_DC_RIGHT_TEXT))
-				TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, (float)w, (float)h, 0.024f, 0.019f, 0.017f, 1.0f);
+				TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, (float)w, (float)h, 0.018f, 0.018f, 0.019f, 1.0f);
 			TieCockpitRenderer_DrawDcGauge(cg, surface, entry, dc_screen->source, occurrence, snap);
 			continue;
 		}

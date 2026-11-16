@@ -3185,6 +3185,30 @@ static void TieCockpitRenderer_DcPaletteColour(const TieSnapshot* snap, uint8_t 
 	out[3] = 1.0f;
 }
 
+/* The target's friend-or-foe colour in TFTC's flight palette, not TIE's:
+ * panel_buildobjectname opens the name with 0xFE and the remapped colour of
+ * the craft's side (0x51, 0x49, 0x45, 0x55), and XWA draws those sides in
+ * newpal.act entries 0x3E, 0x36, 0x32 and 0xD5 (the file reversed). Imperial
+ * red when the name has none. */
+static void TieCockpitRenderer_DcTargetColour(const TieSnapshot* snap, float out[4]) {
+	static const uint8_t k_sides[] = { 0x51u, 0x49u, 0x45u, 0x55u };
+	static const uint8_t k_tftc[][3] = { { 16, 188, 0 }, { 204, 48, 0 }, { 0, 108, 192 }, { 128, 48, 176 } };
+	const uint8_t* name = (const uint8_t*)snap->hud.target_name;
+	size_t side = 1;
+	if (name[0] == 0xFEu && name[1]) {
+		for (side = 0; side < sizeof k_sides && name[1] != TieCockpitText_RemapColor(k_sides[side]); side++)
+			;
+		if (side == sizeof k_sides) {
+			TieCockpitRenderer_DcPaletteColour(snap, name[1], out);
+			return;
+		}
+	}
+	/* sRGB, as the colour should look on screen. */
+	TieScene2dSrgb_PalToLinearRgb((uint32_t)k_tftc[side][0] << 16 | (uint32_t)k_tftc[side][1] << 8 | k_tftc[side][2],
+								  &out[0], &out[1], &out[2]);
+	out[3] = 1.0f;
+}
+
 static const float k_dc_white[4] = { 0.95f, 0.95f, 0.95f, 1.0f };
 
 /* A paragraph flowing in the TFTC screens' font. Text starts at `*pen` on
@@ -3804,7 +3828,9 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 			}
 			const TieHudInstrument* lever = &snap->hud.instruments[TIE_HUDI_WEAPON_FIRE_FIRST + slot];
 			if (TieCockpitCommon_InstrumentActive(lever) && lever->value == 3) {
-				const float dot = fminf(pitch * 0.5f, w * 0.03f), dx = left + step * 6.0f + w * 0.06f;
+				/* On the boats' small strip a full-size dot's glow would run
+				 * past the strip's edges. */
+				const float dot = fminf(pitch * 0.5f, w * 0.03f) * (glow ? 1.0f : 0.55f), dx = left + step * 6.0f + w * 0.06f;
 				AeronDrawList2DRRect glow = {
 					.dst_x = dx - dot * 1.4f, .dst_y = cy - dot * 1.4f, .dst_w = dot * 2.8f, .dst_h = dot * 2.8f,
 					.radius_px = dot * 1.4f, .soft_px = dot,
@@ -4002,15 +4028,17 @@ static void TieCockpitRenderer_DcTargetValue(const TieSnapshot* snap, int id, ch
 }
 
 /* One target readout on a screen of its own (the Missile Boat's), as large as
- * fits: the name in red, the rest in the targeting computer's blue. Empty
- * with no target. */
+ * fits: the name in the target's friend-or-foe colour, the rest in the
+ * targeting computer's blue. Empty with no target. */
 static void TieCockpitRenderer_DrawDcTargetReadout(TieCockpitRenderer* cg,
 												  const struct TieCockpitRendererSurface* surface, TieDcSource source,
 												  const TieSnapshot* snap) {
 	const TieHudState* hud = &snap->hud;
 	if (hud->target_obj_slot == 0xFFFFu || !(hud->working_subsystems & 0x01u))
 		return;
-	static const float k_red[4] = { 0.95f, 0.22f, 0.18f, 1.0f }, k_blue[4] = { 0.6f, 0.78f, 1.0f, 1.0f };
+	static const float k_blue[4] = { 0.6f, 0.78f, 1.0f, 1.0f };
+	float side[4];
+	TieCockpitRenderer_DcTargetColour(snap, side);
 	char text[48] = "";
 	switch (source) {
 		case TIE_DC_TARGET_NAME:
@@ -4044,13 +4072,56 @@ static void TieCockpitRenderer_DrawDcTargetReadout(TieCockpitRenderer* cg,
 	}
 	if (text[0])
 		TieCockpitRenderer_DcReadout(cg, surface->list, (float)surface->w, (float)surface->h, text,
-									 source == TIE_DC_TARGET_NAME ? k_red : k_blue);
+									 source == TIE_DC_TARGET_NAME ? side : k_blue);
 }
 
-/* XWA's targeting computer, filling its screen: the target's name in red
- * across the top, its 3D view tinted red in the middle, shields and hull on
+/* XWA's targeting computer, filling its screen: the target's name across
+ * the top and its 3D view in the middle, both in the target's
+ * friend-or-foe colour, shields and hull on
  * the left, the targeted system and distance on the right, its cargo and the
  * targeted part along the bottom. Empty with no target (panel_updatecmd). */
+/* Whether `effect` is a cover over a targeting screen: drawn on that screen,
+ * under the target, rather than over it. */
+static bool TieCockpitRenderer_DcTargetingCover(const TieCockpitRenderer* cg, const TieDcEffect* effect) {
+	const TieDcLayout* dc = TieCockpitRenderer_DcLayout(cg);
+	for (int s = 0; effect->over && dc && s < dc->count; ++s)
+		if (dc->screens[s].source == TIE_DC_TARGETING && dc->screens[s].texture == effect->faces.texture)
+			return true;
+	return false;
+}
+
+/* The covers over targeting screen `screen` (the TIE cockpits' blue scope
+ * markings), laid on its display under the target so they do not hide it. */
+static void TieCockpitRenderer_DrawDcTargetingCovers(TieCockpitRenderer* cg, AeronDrawList2D* list, float w, float h,
+													 int screen) {
+	double seconds = 0.0;
+	const TieDcEffects* effects = cg->flight_gpu ? TieFlightRenderer_Cockpit3dEffects(cg->flight_gpu, &seconds) : NULL;
+	const TieDcLayout* dc = TieCockpitRenderer_DcLayout(cg);
+	if (!effects || !dc || screen < 0 || screen >= dc->count)
+		return;
+	const TieDcScreen* display = &dc->screens[screen];
+	for (int e = 0; e < effects->count; ++e) {
+		const TieDcEffect* effect = &effects->items[e];
+		AeronTexture* frame = effect->over && effect->faces.texture == display->texture
+								  ? TieDcEffects_Frame(effects, effect, seconds)
+								  : NULL;
+		if (!frame)
+			continue;
+		AeronDrawList2DQuad4 quad = {
+			.texture = frame,
+			.tint = { 1.0f, 1.0f, 1.0f, 1.0f },
+			.blend = AERON_BLIT2D_BLEND_PMA,
+			.filter = AERON_BLIT2D_FILTER_LINEAR,
+			.q = { 1.0f, 1.0f, 1.0f, 1.0f },
+			.corners = { { 0.0f, 0.0f, display->u0, display->v0 },
+						 { w, 0.0f, display->u1, display->v0 },
+						 { 0.0f, h, display->u0, display->v1 },
+						 { w, h, display->u1, display->v1 } },
+		};
+		AeronDrawList_AddQuad4(list, &quad);
+	}
+}
+
 static void TieCockpitRenderer_DrawDcTargeting(TieCockpitRenderer* cg, const struct TieCockpitRendererSurface* surface,
 											   const TieSnapshot* snap) {
 	const TieHudState* hud = &snap->hud;
@@ -4059,18 +4130,20 @@ static void TieCockpitRenderer_DrawDcTargeting(TieCockpitRenderer* cg, const str
 	/* XWA erases the screen to black under the display, covering what the
 	 * cockpit's own texture paints there (the gunboat's glyph blocks). */
 	TieCockpitRenderer_DcFill(list, 0.0f, 0.0f, w, h, 0.0f, 0.0f, 0.0f, 1.0f);
+	TieCockpitRenderer_DrawDcTargetingCovers(cg, list, w, h, surface->screen);
 	if (hud->target_obj_slot == 0xFFFFu || !(hud->working_subsystems & 0x01u))
 		return;
 	const AeronRectI clip = { 1, 1, (int)w - 2, (int)h - 2 };
 	/* The TIE cockpits' round screens leave room for a tenth more. */
 	const char* model = cg->flight_gpu ? TieFlightRenderer_Cockpit3dModel(cg->flight_gpu) : NULL;
 	const float k = model && strncmp(model, "Tie", 3) == 0 ? 1.1f : 1.0f;
-	static const float k_red[4] = { 0.95f, 0.22f, 0.18f, 1.0f }, k_orange[4] = { 0.95f, 0.55f, 0.15f, 1.0f },
-					   k_label[4] = { 0.35f, 0.55f, 1.0f, 1.0f }, k_value[4] = { 0.6f, 0.78f, 1.0f, 1.0f },
+	float side[4];
+	TieCockpitRenderer_DcTargetColour(snap, side);
+	static const float k_orange[4] = { 0.95f, 0.55f, 0.15f, 1.0f }, k_label[4] = { 0.35f, 0.55f, 1.0f, 1.0f }, k_value[4] = { 0.6f, 0.78f, 1.0f, 1.0f },
 					   k_green[4] = { 0.3f, 0.95f, 0.4f, 1.0f };
 
 	/* The target's view, as tall as the screen allows between the name and
-	 * the bottom row, at the PIP's aspect, tinted red. */
+	 * the bottom row, at the PIP's aspect, tinted the target's colour. */
 	AeronTexture* pip_texture = cg->flight_gpu ? TieFlightRenderer_PipTexture(cg->flight_gpu) : NULL;
 	if (pip_texture && snap->cockpit.pip_target_present && snap->cockpit.pip_w && snap->cockpit.pip_h) {
 		const float aspect = (float)snap->cockpit.pip_w / (float)snap->cockpit.pip_h;
@@ -4081,9 +4154,11 @@ static void TieCockpitRenderer_DrawDcTargeting(TieCockpitRenderer* cg, const str
 		}
 		const float x0 = (w - view_w) * 0.5f, y0 = h * 0.1f + (h * 0.88f - view_h) * 0.5f;
 		const float x1 = x0 + view_w, y1 = y0 + view_h;
+		/* The shaded view darkens what tints it: the colour at full strength. */
+		const float peak = fmaxf(fmaxf(side[0], side[1]), fmaxf(side[2], 0.05f));
 		AeronDrawList2DQuad4 quad = {
 			.texture = pip_texture,
-			.tint = { 1.0f, 0.3f, 0.25f, 1.0f },
+			.tint = { side[0] / peak, side[1] / peak, side[2] / peak, 1.0f },
 			.blend = AERON_BLIT2D_BLEND_PMA,
 			.filter = AERON_BLIT2D_FILTER_LINEAR,
 			.q = { 1.0f, 1.0f, 1.0f, 1.0f },
@@ -4096,7 +4171,7 @@ static void TieCockpitRenderer_DrawDcTargeting(TieCockpitRenderer* cg, const str
 	const float left = w * 0.1f, right = w * 0.9f, row_h = h * 0.072f * k;
 	char text[48];
 	TieCockpitRenderer_DcPlainText(hud->target_name, text, sizeof text);
-	TieCockpitRenderer_DcText(cg, list, w * 0.5f, h * 0.02f, h * 0.125f * k, AERON_TEXT_CENTER, text, k_red, &clip);
+	TieCockpitRenderer_DcText(cg, list, w * 0.5f, h * 0.02f, h * 0.125f * k, AERON_TEXT_CENTER, text, side, &clip);
 	if (hud->target_order_text[0]) {
 		TieCockpitRenderer_DcPlainText(hud->target_order_text, text, sizeof text);
 		TieCockpitRenderer_DcText(cg, list, w * 0.5f, h * 0.15f, h * 0.065f * k, AERON_TEXT_CENTER, text, k_orange, &clip);
@@ -4427,11 +4502,14 @@ static void TieCockpitRenderer_DrawDcEffects(TieCockpitRenderer* cg, bool over) 
 	double seconds = 0.0;
 	const TieDcEffects* effects = cg->flight_gpu ? TieFlightRenderer_Cockpit3dEffects(cg->flight_gpu, &seconds) : NULL;
 	if (over) {
-		/* The covers over the DC screens, as XWA draws them, unlit like them. */
+		/* The covers over the DC screens, as XWA draws them, unlit like them;
+		 * a targeting screen's lie under its target instead. */
 		static const float k_over[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 		for (int e = 0; effects && e < effects->count; ++e) {
 			const TieDcEffect* effect = &effects->items[e];
-			AeronTexture* frame = effect->over ? TieDcEffects_Frame(effects, effect, seconds) : NULL;
+			AeronTexture* frame = effect->over && !TieCockpitRenderer_DcTargetingCover(cg, effect)
+									  ? TieDcEffects_Frame(effects, effect, seconds)
+									  : NULL;
 			if (frame)
 				TieCockpitRenderer_DrawDcFaces(cg, frame, k_over, &effect->faces, -1);
 		}

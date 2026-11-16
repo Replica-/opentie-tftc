@@ -36,7 +36,7 @@
 #define TIE_FLIGHT_COCKPIT3D_WORLD_LIGHT 0.4f
 /* The gunboat's shell sits in shade the sun hardly reaches; TFTC shows it
  * grey, so it gets an even fill light of this linear level. */
-#define TIE_FLIGHT_COCKPIT3D_GUNBOAT_FILL 0.35f
+#define TIE_FLIGHT_COCKPIT3D_GUNBOAT_FILL 0.2f
 
 static float s_cockpit3d_fov_deg = TIE_FLIGHT_COCKPIT3D_FOV_DEG;
 

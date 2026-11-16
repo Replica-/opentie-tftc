@@ -178,6 +178,7 @@ typedef struct TieTftcVoice {
 static TieTftcVoice s_voice;  /* the current state's music */
 static TieTftcVoice s_fading; /* the state music it replaced, fading out */
 static TieTftcVoice s_sting;  /* a sting over the state music */
+static TieTftcVoice s_sting_fading; /* a sting stopped by a screen change, fading out */
 static int s_sting_waiting = TFTC_SIGNAL_NONE; /* the sting waiting to start */
 static int s_sting_waiting_priority;
 static uint64_t s_sting_due_us; /* its marker; 0 for the playing sting's end */
@@ -575,6 +576,7 @@ void TieTftcMusic_Shutdown(void) {
 	TieTftcVoice_Close(&s_voice);
 	TieTftcVoice_Close(&s_fading);
 	TieTftcVoice_Close(&s_sting);
+	TieTftcVoice_Close(&s_sting_fading);
 	TieTftcVoice_Close(&s_room);
 	TieTftcVoice_Close(&s_room_fading);
 	s_room_file = NULL;
@@ -632,8 +634,27 @@ void TieTftcMusic_PlayRoom(const char* file, bool loop) {
 	Aeron_LogInfo("tie.music", "TFTC room music: %s", file);
 }
 
+/* Stings belong to the screen they played on: a screen change stops the
+ * playing one as quickly as front end music and drops one still waiting. */
+static void TieTftcMusic_StopStings(void) {
+	s_sting_waiting = TFTC_SIGNAL_NONE;
+	s_sting_waiting_priority = 0;
+	s_sting_due_us = 0;
+	if (!s_sting.stream)
+		return;
+	TieTftcVoice_Close(&s_sting_fading);
+	s_sting_fading = s_sting;
+	s_sting_fading.fade_from = 1.0f;
+	s_sting_fading.fade_to = 0.0f;
+	s_sting_fading.fade_start_us = Aeron_NowUs();
+	s_sting_fading.fade_us = TFTC_ROOM_STOP_US;
+	memset(&s_sting, 0, sizeof s_sting);
+	Aeron_LogInfo("tie.music", "TFTC music: %s stops for the screen change", s_sting_fading.file);
+}
+
 void TieTftcMusic_BeginRoomChange(void) {
 	s_room_requested = false;
+	TieTftcMusic_StopStings();
 }
 
 void TieTftcMusic_EndRoomChange(void) {
@@ -678,8 +699,9 @@ void TieTftcMusic_Stop(void) {
 		Aeron_LogInfo("tie.music", "TFTC music stopped");
 	TieTftcVoice_Close(&s_voice);
 	TieTftcVoice_Close(&s_fading);
-	/* A sting playing as the mission ends, like Hyperspace, plays out; one
-	 * still waiting for its marker starts now, with no music left to wait on. */
+	/* A sting playing as the mission ends, like Hyperspace, plays on until the
+	 * screen changes; one still waiting for its marker starts now, with no
+	 * music left to wait on. */
 	if (s_sting_waiting != TFTC_SIGNAL_NONE && !s_sting.stream) {
 		s_sting_due_us = 1;
 		TieTftcMusic_UpdateWaitingSting(Aeron_NowUs());
@@ -740,6 +762,7 @@ void TieTftcMusic_Update(void) {
 
 	TieTftcVoice_UpdateFading(&s_fading, now, s_duck);
 	TieTftcVoice_Update(&s_voice, now, s_duck);
+	TieTftcVoice_UpdateFading(&s_sting_fading, now, 1.0f);
 	TieTftcVoice_UpdateFading(&s_room_fading, now, 1.0f);
 	TieTftcVoice_Update(&s_room, now, 1.0f);
 }

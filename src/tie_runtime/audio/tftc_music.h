@@ -35,7 +35,7 @@ const char* TieTftcMusic_CurrentTune(void);
 void TieTftcMusic_PlayRoom(const char* file, bool loop);
 void TieTftcMusic_PauseRoom(bool paused);
 /* Brackets a screen change: a piece the next screen asks for again carries
- * on, and one it does not ask for stops at the end. */
+ * on, and one it does not ask for stops at the end. Stings stop at the start. */
 void TieTftcMusic_BeginRoomChange(void);
 void TieTftcMusic_EndRoomChange(void);
 /* The room's FLAC file, or NULL when none plays. */

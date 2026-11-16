@@ -2,6 +2,19 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Cockpit Notes (localhost:8765)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/tools/cockpit_notes/server.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "serverReadyAction": {
+        "pattern": "Cockpit Notes on (http://localhost:[0-9]+/)",
+        "uriFormat": "%s",
+        "action": "openExternally"
+      }
+    },
+    {
       "name": "OpenTIE (Debug, gdb)",
       "type": "cppdbg",
       "request": "launch",

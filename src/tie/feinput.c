@@ -281,6 +281,9 @@ uint16_t feinput_getrawinput(void) {
 		joysticky = TieInput_MapAxis(raw, 3, mapping->axes[TIE_INPUT_AXIS_PITCH]);
 		joystickroll = TieInput_MapAxis(raw, 3, mapping->axes[TIE_INPUT_AXIS_ROLL]);
 	}
+	inputstickx = joystickx;
+	inputsticky = joysticky;
+	inputstickroll = joystickroll;
 	{
 		/* The mouse virtual stick deflects yaw and pitch through the joystick
 		 * gains, overriding each controller axis it moves. */

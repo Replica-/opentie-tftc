@@ -21,6 +21,11 @@
 int16_t inputdeltaroll;
 int16_t joystickroll;
 uint32_t inputthrottle = UINT32_MAX;
+/* The controller's yaw, pitch and roll before the mouse virtual stick
+ * overrides them, for the 3D cockpit's yoke. */
+int16_t inputstickx;
+int16_t inputsticky;
+int16_t inputstickroll;
 
 /* ================================================================
  * Keyboard — DOS scancode queue fed from AeronInputSnapshot

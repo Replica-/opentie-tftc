@@ -132,6 +132,7 @@ static bool TieDcLayout_Place(const opt_file_t* opt, int texture, float u0, floa
 				for (int t = 0; t + 2 < corners_in_face; ++t) {
 					const int k[3] = { 0, t + 1, t + 2 };
 					TieDcTriangle tri;
+					tri.mesh = m;
 					float lo[2] = { 1e30f, 1e30f }, hi[2] = { -1e30f, -1e30f };
 					bool valid = true;
 					for (int i = 0; i < 3 && valid; ++i) {

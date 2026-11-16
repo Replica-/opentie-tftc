@@ -93,9 +93,10 @@ bool TieFlightRenderer_ScreenRay(const TieFlightRenderer* g, float x, float y, f
 void TieFlightRenderer_ProjectLocal(const TieFlightRenderer* g, const float point[3], float clip[4]);
 /* The TFTC DC screens of the 3D cockpit drawn this frame, or NULL. */
 const struct TieDcLayout* TieFlightRenderer_Cockpit3dLayout(const TieFlightRenderer* g);
-/* Clip-space position of a 3D cockpit model point (metres), this frame; false
- * when it is behind the eye. */
-bool TieFlightRenderer_Cockpit3dProject(const TieFlightRenderer* g, const float model[3], float clip[4]);
+/* Clip-space position of a 3D cockpit model point (metres) on OPT mesh `mesh`,
+ * this frame, moved with the yoke when the mesh is part of it; false when it
+ * is behind the eye. */
+bool TieFlightRenderer_Cockpit3dProject(const TieFlightRenderer* g, int mesh, const float model[3], float clip[4]);
 /* Horizontal field of view of the 3D cockpit: its .dc xwahacker_fov. */
 float TieFlightCockpit3d_FovDeg(void);
 

@@ -1003,6 +1003,11 @@ extern int16_t joystickflag;
 extern int16_t joystickx;
 extern int16_t joysticky;
 extern int16_t joystickroll;
+/* PORT: the controller's axes alone, without the mouse virtual stick;
+ * defined in tie_runtime/input/input.c. */
+extern int16_t inputstickx;
+extern int16_t inputsticky;
+extern int16_t inputstickroll;
 extern uint32_t inputthrottle; /* UINT32_MAX means no command this frame. */
 extern int16_t joybuttons;
 extern int16_t mousebuttons;

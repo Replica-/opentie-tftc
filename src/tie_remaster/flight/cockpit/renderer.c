@@ -3843,7 +3843,7 @@ static void TieCockpitRenderer_DrawDcScreen(TieCockpitRenderer* cg, const struct
 		float clip[3][4];
 		bool visible = true;
 		for (int c = 0; c < 3 && visible; ++c)
-			visible = TieFlightRenderer_Cockpit3dProject(cg->flight_gpu, tri->position[c], clip[c]);
+			visible = TieFlightRenderer_Cockpit3dProject(cg->flight_gpu, tri->mesh, tri->position[c], clip[c]);
 		if (!visible)
 			continue;
 		AeronDrawList2DQuad4 quad = {

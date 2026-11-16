@@ -780,6 +780,10 @@ typedef struct TieCockpitState {
 	 * empty string when no parts file is bound. */
 	char parts_basename[10];
 	uint16_t parts_shape_count;
+	/* The controller's yaw, pitch and roll, -1..1 (the mouse virtual stick
+	 * left out); pitch is positive with the stick pulled back. The 3D
+	 * cockpit's yoke follows it. */
+	float stick[3];
 } TieCockpitState;
 
 /* ===== Backdrop / skybox set =====

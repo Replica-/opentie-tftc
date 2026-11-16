@@ -138,6 +138,49 @@ static const TieFlightCockpit3dModel k_cockpit3d_models[] = {
 	{ "MISSBT", "MissileBoatCockpit" },	  { "MISSUP", "MissileBoatCockpit" },
 };
 
+/* How far the yoke tilts with the stick fully back or forward, and turns
+ * with it fully over, in degrees. */
+#define TIE_FLIGHT_COCKPIT3D_YOKE_PITCH_DEG 8.0f
+#define TIE_FLIGHT_COCKPIT3D_YOKE_TURN_DEG 20.0f
+
+/* A cockpit's yoke: the OPT meshes of its column and what rides on it, where
+ * the column meets the floor and the way it runs from there to the grips, in
+ * OPT units. The stick tilts it about that point, fore and aft with pitch,
+ * and turns it about the column with yaw and roll. */
+typedef struct TieFlightCockpit3dYoke {
+	const char* model;
+	int meshes[4];
+	int mesh_count;
+	float pivot[3];
+	float column[3];
+} TieFlightCockpit3dYoke;
+
+static const TieFlightCockpit3dYoke k_cockpit3d_yokes[] = {
+	/* The column, and the targeting computer between its grips. */
+	{ "TieFighterCockpit", { 17, 31 }, 2, { 0.0f, -36.0f, -28.0f }, { 0.0f, 18.0f, 19.0f } },
+};
+
+static const TieFlightCockpit3dYoke* TieFlightCockpit3d_YokeOf(const char* model) {
+	for (size_t i = 0; i < sizeof k_cockpit3d_yokes / sizeof k_cockpit3d_yokes[0]; ++i)
+		if (strcmp(k_cockpit3d_yokes[i].model, model) == 0)
+			return &k_cockpit3d_yokes[i];
+	return NULL;
+}
+
+static bool TieFlightCockpit3d_OnYoke(const TieFlightCockpit3dYoke* yoke, int mesh) {
+	for (int i = 0; yoke && i < yoke->mesh_count; ++i)
+		if (yoke->meshes[i] == mesh)
+			return true;
+	return false;
+}
+
+static bool TieFlightCockpit3d_Listed(const int* list, int count, int mesh) {
+	for (int i = 0; i < count; ++i)
+		if (list[i] == mesh)
+			return true;
+	return false;
+}
+
 static const char* TieFlightCockpit3d_ModelForView(const char* view_name) {
 	for (size_t i = 0; i < sizeof k_cockpit3d_models / sizeof k_cockpit3d_models[0]; ++i) {
 		const char* prefix = k_cockpit3d_models[i].view_prefix;
@@ -174,6 +217,8 @@ void TieFlightCockpit3d_Release(TieFlightRenderer* g) {
 		AeronScene_MeshDestroy(g->cockpit3d_meshes[i]);
 	g->cockpit3d_mesh_count = 0;
 	g->cockpit3d_model = NULL;
+	g->cockpit3d_yoke = NULL;
+	g->cockpit3d_yoke_first = 0;
 	g->cockpit3d_active = false;
 	TieDcLayout_Free(&g->cockpit3d_dc);
 	g->cockpit3d_dc_loaded = false;
@@ -181,15 +226,12 @@ void TieFlightCockpit3d_Release(TieFlightRenderer* g) {
 
 static bool TieFlightCockpit3d_BuildChunk(TieFlightRenderer* g, AeronCommandBuffer* cmd, const uint8_t* bytes,
 										  size_t size, const char* path, const TieFlightTftcMaterialSet* materials,
-										  const int* hidden, int hidden_count, int first, int count) {
-	/* A run of meshes the object profile hides entirely has nothing to build. */
+										  const int* skip, int skip_count, int first, int count) {
+	/* A run of meshes left out entirely has nothing to build. */
 	int shown = count;
 	for (int i = first; i < first + count; ++i)
-		for (int h = 0; h < hidden_count; ++h)
-			if (hidden[h] == i) {
-				--shown;
-				break;
-			}
+		if (TieFlightCockpit3d_Listed(skip, skip_count, i))
+			--shown;
 	if (shown <= 0)
 		return true;
 	AeronFlightModel built = { 0 };
@@ -205,8 +247,8 @@ static bool TieFlightCockpit3d_BuildChunk(TieFlightRenderer* g, AeronCommandBuff
 									   .max_atlas_size = 8192,
 									   .mesh_first = first,
 									   .mesh_count = count,
-									   .mesh_skip = hidden,
-									   .mesh_skip_count = (size_t)hidden_count,
+									   .mesh_skip = skip,
+									   .mesh_skip_count = (size_t)skip_count,
 									   .base_color_scale = TIE_FLIGHT_COCKPIT3D_BASE_COLOR,
 								   },
 								   &built, &error))
@@ -223,9 +265,24 @@ static bool TieFlightCockpit3d_BuildChunk(TieFlightRenderer* g, AeronCommandBuff
 /* Scene meshes use 16-bit indices and an XWA cockpit converts to far more
  * vertices than that, so it is built as runs of its OPT meshes, halving a
  * run until it fits. */
+static void TieFlightCockpit3d_BuildRuns(TieFlightRenderer* g, AeronCommandBuffer* cmd, const uint8_t* bytes,
+										 size_t size, const char* path, const TieFlightTftcMaterialSet* materials,
+										 const int* skip, int skip_count, int first, int end) {
+	while (first < end && g->cockpit3d_mesh_count < TIE_FLIGHT_COCKPIT3D_MAX_CHUNKS) {
+		int count = end - first;
+		while (!TieFlightCockpit3d_BuildChunk(g, cmd, bytes, size, path, materials, skip, skip_count, first, count) &&
+			   count > 1)
+			count = (count + 1) / 2;
+		if (count == 1 && g->cockpit3d_mesh_count == 0)
+			Aeron_LogWarn("tie.cockpit3d", "%s: mesh %d could not be built", path, first);
+		first += count;
+	}
+}
+
 static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cmd, const char* model) {
 	TieFlightCockpit3d_Release(g);
 	g->cockpit3d_model = model;
+	g->cockpit3d_yoke = TieFlightCockpit3d_YokeOf(model);
 
 	char path[96];
 	snprintf(path, sizeof path, "cockpit3d/%s.opt", model);
@@ -276,6 +333,18 @@ static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cm
 			dc_text[dc_size] = '\0';
 			g->cockpit3d_dc_loaded = TieDcLayout_Build(dc_text, &shown, &g->cockpit3d_dc);
 			free(dc_text);
+			/* Each screen's meshes by their index in the whole OPT. */
+			for (int s = 0; shown_meshes && s < g->cockpit3d_dc.count; ++s) {
+				const TieDcScreen* screen = &g->cockpit3d_dc.screens[s];
+				for (int t = 0; t < screen->triangle_count; ++t) {
+					int* mesh = &screen->triangles[t].mesh;
+					for (int m = 0, n = 0; m < total; ++m)
+						if (!TieFlightCockpit3d_Listed(hidden, hidden_count, m) && n++ == *mesh) {
+							*mesh = m;
+							break;
+						}
+				}
+			}
 		}
 		free(dc_bytes);
 		Aeron_LogInfo("tie.cockpit3d", "%s: %d HUD screens", dc_path,
@@ -299,17 +368,33 @@ static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cm
 		return;
 	}
 
-	int first = 0;
-	while (first < total && g->cockpit3d_mesh_count < TIE_FLIGHT_COCKPIT3D_MAX_CHUNKS) {
-		int count = total - first;
-		while (!TieFlightCockpit3d_BuildChunk(g, cmd, bytes, size, path, &materials, hidden, hidden_count, first,
-											  count) &&
-			   count > 1)
-			count = (count + 1) / 2;
-		if (count == 1 && g->cockpit3d_mesh_count == 0)
-			Aeron_LogWarn("tie.cockpit3d", "%s: mesh %d could not be built", path, first);
-		first += count;
+	/* The yoke is left out of the shell and built after it, as scene meshes
+	 * of its own that turn with the stick. */
+	const TieFlightCockpit3dYoke* yoke = g->cockpit3d_yoke;
+	int* skip = malloc((size_t)(total > 0 ? total : 1) * sizeof *skip);
+	if (!skip) {
+		TieFlightTftc_FreeMaterials(&materials);
+		free(bytes);
+		return;
 	}
+	int skip_count = 0;
+	for (int m = 0; m < total; ++m)
+		if (TieFlightCockpit3d_Listed(hidden, hidden_count, m) || TieFlightCockpit3d_OnYoke(yoke, m))
+			skip[skip_count++] = m;
+	TieFlightCockpit3d_BuildRuns(g, cmd, bytes, size, path, &materials, skip, skip_count, 0, total);
+	g->cockpit3d_yoke_first = g->cockpit3d_mesh_count;
+	int yoke_first = total, yoke_end = 0;
+	skip_count = 0;
+	for (int m = 0; m < total; ++m) {
+		if (TieFlightCockpit3d_OnYoke(yoke, m) && !TieFlightCockpit3d_Listed(hidden, hidden_count, m)) {
+			yoke_first = m < yoke_first ? m : yoke_first;
+			yoke_end = m + 1;
+		} else {
+			skip[skip_count++] = m;
+		}
+	}
+	TieFlightCockpit3d_BuildRuns(g, cmd, bytes, size, path, &materials, skip, skip_count, yoke_first, yoke_end);
+	free(skip);
 	TieFlightTftc_FreeMaterials(&materials);
 	free(bytes);
 	uint32_t vertices = 0;
@@ -330,6 +415,33 @@ void TieFlightCockpit3d_Prepare(TieFlightRenderer* g, AeronCommandBuffer* cmd, c
 		TieFlightCockpit3d_Load(g, cmd, model);
 }
 
+/* The cockpit's transform with the yoke tilted and turned by the stick about
+ * where its column meets the floor: turned about the column, then the column
+ * tilted, the top coming back with the stick pulled back and the right grip
+ * dropping with it pushed right. Without a yoke, the cockpit's own. */
+static void TieFlightCockpit3d_YokeTransform(const TieFlightCockpit3dYoke* yoke, const float stick[3],
+											 const float cockpit[16], float out[16]) {
+	memcpy(out, cockpit, sizeof(float[16]));
+	if (!yoke)
+		return;
+	const float pivot[3] = { yoke->pivot[0] * AERON_OPT_METERS_PER_UNIT, yoke->pivot[1] * AERON_OPT_METERS_PER_UNIT,
+							 yoke->pivot[2] * AERON_OPT_METERS_PER_UNIT };
+	const float degrees = 3.14159265f / 180.0f;
+	const float turn = fmaxf(-1.0f, fminf(1.0f, stick[0] + stick[2]));
+	float turn_3x4[3][4], tilt_3x4[3][4];
+	TieRenderMath_Mat3x4RotationAboutPivot(turn_3x4, yoke->column, pivot,
+										   turn * TIE_FLIGHT_COCKPIT3D_YOKE_TURN_DEG * degrees);
+	TieRenderMath_Mat3x4RotationAboutPivot(tilt_3x4, (const float[3]) { 1.0f, 0.0f, 0.0f }, pivot,
+										   -stick[1] * TIE_FLIGHT_COCKPIT3D_YOKE_PITCH_DEG * degrees);
+	float turn_m[16], tilt_m[16], local[16];
+	TieRenderMath_Mat4Identity(turn_m);
+	TieRenderMath_Mat4Identity(tilt_m);
+	memcpy(turn_m, turn_3x4, sizeof turn_3x4);
+	memcpy(tilt_m, tilt_3x4, sizeof tilt_3x4);
+	TieRenderMath_Mat4Multiply(local, tilt_m, turn_m);
+	TieRenderMath_Mat4Multiply(out, cockpit, local);
+}
+
 void TieFlightCockpit3d_Submit(TieFlightRenderer* g, const TieSnapshot* curr, const float cam_pos[3]) {
 	const TieFlightObjectState* craft = TieFlightCockpit3d_RiddenCraft(curr);
 	if (!TiePresentation_Cockpit3d() || g->cockpit3d_mesh_count == 0 || !craft ||
@@ -347,14 +459,16 @@ void TieFlightCockpit3d_Submit(TieFlightRenderer* g, const TieSnapshot* curr, co
 		1.0f, 0.0f, 0.0f, -eye[0], 0.0f, 1.0f, 0.0f, -eye[1], 0.0f, 0.0f, 1.0f, -eye[2], 0.0f, 0.0f, 0.0f, 1.0f,
 	};
 	TieRenderMath_Mat4Multiply(transform, craft_transform, to_eye);
+	TieFlightCockpit3d_YokeTransform(g->cockpit3d_yoke, curr->cockpit.stick, transform, g->cockpit3d_yoke_transform);
 	for (uint32_t i = 0; i < g->cockpit3d_mesh_count; ++i) {
 		AeronSceneMeshInstance in;
 		memset(&in, 0, sizeof in);
 		in.mesh = g->cockpit3d_meshes[i];
 		if (in.mesh->all_materials_single_sided)
 			in.cull_mode = AERON_CULL_BACK;
-		memcpy(in.transform, transform, sizeof in.transform);
-		memcpy(in.prev_transform, transform, sizeof in.prev_transform);
+		const float* placed = i >= g->cockpit3d_yoke_first ? g->cockpit3d_yoke_transform : transform;
+		memcpy(in.transform, placed, sizeof in.transform);
+		memcpy(in.prev_transform, placed, sizeof in.prev_transform);
 		in.zero_velocity = 1;
 		in.world_light_scale = TIE_FLIGHT_COCKPIT3D_WORLD_LIGHT;
 		/* The hidden exterior hull still casts shadows and would black out
@@ -376,11 +490,13 @@ const TieDcLayout* TieFlightRenderer_Cockpit3dLayout(const TieFlightRenderer* g)
 	return g && g->cockpit3d_active && g->cockpit3d_dc_loaded ? &g->cockpit3d_dc : NULL;
 }
 
-bool TieFlightRenderer_Cockpit3dProject(const TieFlightRenderer* g, const float model[3], float clip[4]) {
+bool TieFlightRenderer_Cockpit3dProject(const TieFlightRenderer* g, int mesh, const float model[3], float clip[4]) {
 	if (!g || !g->cockpit3d_active)
 		return false;
 	float local[4];
-	TieFlightCockpit3d_Transform(g->cockpit3d_transform, model, 1.0f, local);
+	TieFlightCockpit3d_Transform(TieFlightCockpit3d_OnYoke(g->cockpit3d_yoke, mesh) ? g->cockpit3d_yoke_transform
+																					: g->cockpit3d_transform,
+								 model, 1.0f, local);
 	TieFlightRenderer_ProjectLocal(g, local, clip);
 	return clip[3] > 1e-4f;
 }
@@ -469,10 +585,10 @@ bool TieFlightRenderer_Cockpit3dSurfaceAt(const TieFlightRenderer* g, float x, f
 	float origin[3], dir[3];
 	if (!g || !g->cockpit3d_active || !TieFlightRenderer_ScreenRay(g, x, y, origin, dir))
 		return false;
-	const float* m = g->cockpit3d_transform;
 	float best = 1.0e30f;
 	bool hit = false;
 	for (uint32_t c = 0; c < g->cockpit3d_mesh_count; ++c) {
+		const float* m = c >= g->cockpit3d_yoke_first ? g->cockpit3d_yoke_transform : g->cockpit3d_transform;
 		const AeronSceneMesh* mesh = g->cockpit3d_meshes[c];
 		if (!mesh->cpu_vertices || !mesh->cpu_indices)
 			continue;

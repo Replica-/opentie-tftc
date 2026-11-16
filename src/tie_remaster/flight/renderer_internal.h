@@ -328,6 +328,11 @@ struct TieFlightRenderer {
 	bool cockpit3d_active; /* submitted this frame */
 	float cockpit3d_transform[16]; /* model (metres) to camera-local world, this frame */
 	float cockpit3d_eye[3];        /* pilot eye in the model, metres */
+	/* The yoke of the loaded cockpit, or NULL; its meshes are built as the
+	 * scene meshes from `cockpit3d_yoke_first` on, which turn with the stick. */
+	const struct TieFlightCockpit3dYoke* cockpit3d_yoke;
+	uint32_t cockpit3d_yoke_first;
+	float cockpit3d_yoke_transform[16]; /* as cockpit3d_transform, for the yoke */
 	/* TFTC DC screens of the loaded cockpit (cockpit/dc_layout.c). */
 	TieDcLayout cockpit3d_dc;
 	bool cockpit3d_dc_loaded;

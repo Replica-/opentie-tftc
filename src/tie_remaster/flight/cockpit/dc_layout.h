@@ -47,6 +47,7 @@ typedef enum TieDcSource {
 typedef struct TieDcTriangle {
 	float position[3][3];
 	float display[3][2];
+	int mesh; /* the OPT mesh it lies on, by its index in the file it was built from */
 } TieDcTriangle;
 
 typedef struct TieDcScreen {

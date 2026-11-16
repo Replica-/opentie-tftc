@@ -24,6 +24,7 @@
 #include "tie_runtime/runtime/profile.h"
 #include "tie_runtime/snapshot/snapshot_internal.h"
 
+#include <landru/joy.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -430,6 +431,12 @@ static void TieHudSnapshot_CaptureCockpit(void) {
 	TieCockpitState* ck = TieSnapshotBuilder_CockpitMut();
 	const uint8_t view_idx = camera.pilotview;
 	ck->view_idx = view_idx;
+	{
+		const float full = (float)(LANDRU_JOYSTICK_AXIS_LIMIT - LANDRU_JOYSTICK_DEADZONE);
+		const int16_t axes[3] = { inputstickx, inputsticky, inputstickroll };
+		for (int k = 0; k < 3; ++k)
+			ck->stick[k] = fmaxf(-1.0f, fminf(1.0f, (float)axes[k] / full));
+	}
 	ck->covers_allowed = pstate.player && pstate.player->ship_idx != CRAFT_TIE_FIGHTER && view_idx == 0;
 	if (view_idx < PANEL_NUM_VIEWS) {
 		const PanelViewDef* vd = &panelviewdefs[view_idx];

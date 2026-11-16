@@ -3487,18 +3487,18 @@ static void TieCockpitRenderer_DcFill(AeronDrawList2D* list, float x, float y, f
 	AeronDrawList_AddRRect(list, &rect);
 }
 
-/* A sleek screen for a hologram text box: dark gunmetal glass with rounded
- * corners, fading down the screen. It stops short of the target's edge:
+/* A sleek screen for a hologram text box: dark gunmetal glass with corners
+ * rounded by `radius`, fading down the screen. It stops short of the target's edge:
  * faces running past the display sample the clamped edge texels, which
  * would smear the screen out into flaps. */
-static void TieCockpitRenderer_DrawDcHologramPanel(AeronDrawList2D* list, float w, float h) {
+static void TieCockpitRenderer_DrawDcHologramPanel(AeronDrawList2D* list, float w, float h, float radius) {
 	const float edge = 3.0f;
 	AeronDrawList2DRRect glass = {
 		.dst_x = edge,
 		.dst_y = edge,
 		.dst_w = w - 2.0f * edge,
 		.dst_h = h - 2.0f * edge,
-		.radius_px = fminf(w, h) * 0.06f,
+		.radius_px = radius,
 		.soft_px = 1.5f,
 		.fill_top = { 0.014f, 0.015f, 0.017f, 1.0f },
 		.fill_bottom = { 0.006f, 0.006f, 0.007f, 1.0f },
@@ -3509,14 +3509,14 @@ static void TieCockpitRenderer_DrawDcHologramPanel(AeronDrawList2D* list, float 
 /* A slight bevel round a text screen: a lit band inside its top edge, a
  * shaded one inside its bottom, and a thin rim. It sits `inset` in from the
  * target's edge, clear of the clamped edge texels. */
-static void TieCockpitRenderer_DrawDcBevel(AeronDrawList2D* list, float w, float h, float inset) {
+static void TieCockpitRenderer_DrawDcBevel(AeronDrawList2D* list, float w, float h, float inset, float radius) {
 	const float band = fmaxf(fminf(w, h) * 0.022f, 2.0f);
 	AeronDrawList2DRRect bevel = {
 		.dst_x = inset,
 		.dst_y = inset,
 		.dst_w = w - 2.0f * inset,
 		.dst_h = h - 2.0f * inset,
-		.radius_px = fminf(w, h) * 0.06f,
+		.radius_px = radius,
 		.border_px = fmaxf(band * 0.35f, 1.0f),
 		.bevel_px = band,
 		.soft_px = 1.5f,
@@ -4075,10 +4075,14 @@ static void TieCockpitRenderer_BeginDcSurfaces(TieCockpitRenderer* cg, const Tie
 				continue;
 			/* XWA projects a hologram text box in the air; here it gets a screen. */
 			if (dc_screen->source == TIE_DC_LEFT_TEXT || dc_screen->source == TIE_DC_RIGHT_TEXT) {
+				/* The TIE Avenger's screens are plain rectangles. */
+				const char* model = cg->flight_gpu ? TieFlightRenderer_Cockpit3dModel(cg->flight_gpu) : NULL;
+				const float radius =
+					model && strcmp(model, "TieAvengerCockpit") == 0 ? 0.0f : fminf((float)w, (float)h) * 0.06f;
 				if (dc_screen->hologram)
-					TieCockpitRenderer_DrawDcHologramPanel(surface->list, (float)w, (float)h);
+					TieCockpitRenderer_DrawDcHologramPanel(surface->list, (float)w, (float)h, radius);
 				TieCockpitRenderer_DrawDcBevel(surface->list, (float)w, (float)h,
-											   dc_screen->hologram ? 3.0f : fminf((float)w, (float)h) * 0.025f);
+											   dc_screen->hologram ? 3.0f : fminf((float)w, (float)h) * 0.025f, radius);
 			}
 			cg->dc_hologram = dc_screen->hologram;
 			TieCockpitRenderer_DrawDcGauge(cg, surface, entry, dc_screen->source, occurrence, snap);
@@ -4290,6 +4294,19 @@ static void TieCockpitRenderer_DrawDcScreen(TieCockpitRenderer* cg, const struct
 				{ x1, y1 - (left ? 0.0f : inset), 1.0f, 1.0f },
 			},
 		};
+		/* The TIE Avenger's stay rectangles, tilted inner side up, as XWA
+		 * angles its text toward the middle. */
+		const char* model = cg->flight_gpu ? TieFlightRenderer_Cockpit3dModel(cg->flight_gpu) : NULL;
+		if (model && strcmp(model, "TieAvengerCockpit") == 0) {
+			const float tilt = (left ? -4.5f : 4.5f) * 3.14159265f / 180.0f, c = cosf(tilt), s = sinf(tilt);
+			const float cx = (x0 + x1) * 0.5f, cy = (y0 + y1) * 0.5f, fit = 0.96f;
+			for (int k = 0; k < 4; ++k) {
+				const float dx = ((k & 1) ? x1 - cx : x0 - cx) * fit, dy = ((k & 2) ? y1 - cy : y0 - cy) * fit;
+				quad.corners[k][0] = cx + dx * c - dy * s;
+				quad.corners[k][1] = cy + dx * s + dy * c;
+				quad.q[k] = 1.0f;
+			}
+		}
 		AeronDrawList_AddQuad4(cg->record_list, &quad);
 		return;
 	}

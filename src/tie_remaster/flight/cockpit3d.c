@@ -92,8 +92,8 @@ static void TieFlightCockpit3d_LoadEye(TieFlightRenderer* g, const char* model) 
 		const char* model;
 		float eye[3];
 	} k_eyes[] = {
-		{ "AssaultGunboatCockpit", { 0.0f, -43.0f, 14.0f } },
-		{ "MissileBoatCockpit", { 0.0f, -131.0f, 18.0f } },
+		{ "AssaultGunboatCockpit", { 0.0f, -41.2f, 15.8f } },
+		{ "MissileBoatCockpit", { 0.0f, -131.0f, 19.5f } },
 		{ "TieAvengerCockpit", { 0.0f, 5.0f, 4.0f } },
 	};
 	for (size_t i = 0; i < sizeof k_eyes / sizeof k_eyes[0]; ++i)
@@ -286,6 +286,28 @@ static char* TieFlightCockpit3d_CoverLines(const char* dc_text) {
 	return out;
 }
 
+/* The missile boat's hologram text boxes crowd its console: each is made a
+ * tenth wider and moved out from the middle by a tenth of its width. */
+static void TieFlightCockpit3d_SpreadHolograms(TieDcLayout* dc) {
+	for (int s = 0; s < dc->count; ++s) {
+		TieDcScreen* screen = &dc->screens[s];
+		if (!screen->hologram || screen->triangle_count <= 0)
+			continue;
+		float lo = 1e30f, hi = -1e30f;
+		for (int t = 0; t < screen->triangle_count; ++t)
+			for (int c = 0; c < 3; ++c) {
+				lo = fminf(lo, screen->triangles[t].position[c][0]);
+				hi = fmaxf(hi, screen->triangles[t].position[c][0]);
+			}
+		const float centre = (lo + hi) * 0.5f, shift = (centre < 0.0f ? -0.1f : 0.1f) * (hi - lo);
+		for (int t = 0; t < screen->triangle_count; ++t)
+			for (int c = 0; c < 3; ++c) {
+				float* x = &screen->triangles[t].position[c][0];
+				*x = centre + shift + (*x - centre) * 1.1f;
+			}
+	}
+}
+
 /* A screen's meshes, indexed in the OPT without its `hidden` meshes, by their
  * index in the whole OPT. */
 static void TieFlightCockpit3d_RemapMeshes(TieDcScreen* screen, const int* hidden, int hidden_count, int total) {
@@ -457,6 +479,8 @@ static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cm
 			free(dc_text);
 			for (int s = 0; shown_meshes && s < g->cockpit3d_dc.count; ++s)
 				TieFlightCockpit3d_RemapMeshes(&g->cockpit3d_dc.screens[s], hidden, hidden_count, total);
+			if (strcmp(model, "MissileBoatCockpit") == 0)
+				TieFlightCockpit3d_SpreadHolograms(&g->cockpit3d_dc);
 		}
 		free(dc_bytes);
 		Aeron_LogInfo("tie.cockpit3d", "%s: %d HUD screens", dc_path,

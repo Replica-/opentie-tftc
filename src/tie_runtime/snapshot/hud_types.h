@@ -336,6 +336,14 @@ typedef struct TieHudState {
 		uint8_t hours, minutes, seconds;
 	} radio[TIE_HUD_RADIO_LINES];
 	uint8_t radio_count;
+
+	/* The mission goals screen's header, as XWA's goals display shows it:
+	 * the primary goals' outcome (mission.primary_complete: 0 unresolved,
+	 * 1 complete, 2 failed), the score so far (the in-flight terms of
+	 * fediskio's end-of-mission score) and the bonus points earned. */
+	uint8_t goals_outcome;
+	int32_t goals_score;
+	int32_t goals_bonus;
 } TieHudState;
 
 #endif

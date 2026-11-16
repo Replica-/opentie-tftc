@@ -2421,26 +2421,24 @@ static void TieCockpitRenderer_DrawMessageBar(TieCockpitRenderer* cg, AeronComma
 			.space_between_classic = 0.0f,
 			.fit = TIE_SCENE2D_TEXT_FIT_FILL,
 		};
-		if (centered) {
-			int index = 0;
-			if (snap->hud.msg_bar.present) {
-				/* Message body: smaller font, horizontally centered, at the top of the screen. */
-				recs[0].font_id = FONT_MICRO64;
-				const float width = TieScene2dTextRenderer_MeasureFestringClassic(
-					cg->text_renderer, recs[0].font_domain, recs[0].font_id, &message_space, recs[0].text);
-				recs[0].x = (int16_t)(((float)geometry.classic_w - width) * 0.5f);
-				recs[0].y = 6;
-				++index;
-			}
-			/* Time-warp readout: centered on the line under the message. */
-			if (index < n_recs) {
-				recs[index].font_id = FONT_MICRO64;
-				const float width = TieScene2dTextRenderer_MeasureFestringClassic(
-					cg->text_renderer, recs[index].font_domain, recs[index].font_id, &message_space,
-					recs[index].text);
-				recs[index].x = (int16_t)(((float)geometry.classic_w - width) * 0.5f);
-				recs[index].y = 18;
-			}
+		/* Message body: smaller font, horizontally centered, at the top of the
+		 * screen. The time-warp readout keeps its bottom-right corner. */
+		if (centered && snap->hud.msg_bar.present) {
+			recs[0].font_id = FONT_MICRO64;
+			const float width = TieScene2dTextRenderer_MeasureFestringClassic(
+				cg->text_renderer, recs[0].font_domain, recs[0].font_id, &message_space, recs[0].text);
+			recs[0].x = (int16_t)(((float)geometry.classic_w - width) * 0.5f);
+			recs[0].y = 6;
+		}
+		/* The time-warp readout follows the body: at the screen's right edge,
+		 * past the 4:3 frame on a wide screen. */
+		const int warp = snap->hud.msg_bar.present ? 1 : 0;
+		if (warp < n_recs && geometry.text_scale_x > 0.0f) {
+			const float width = TieScene2dTextRenderer_MeasureFestringClassic(
+				cg->text_renderer, recs[warp].font_domain, recs[warp].font_id, &message_space, recs[warp].text);
+			const float right = ((float)target->target_w - geometry.text_fit_x) / geometry.text_scale_x;
+			recs[warp].x = (int16_t)(right - width - 6.0f);
+			recs[warp].y = (int16_t)((float)geometry.classic_h * 0.945f);
 		}
 		TieScene2dTextRenderer_RecordFestringScaled(
 			cg->text_renderer, cg->record_list, geometry.classic_w, geometry.classic_h, &message_space, recs,
@@ -3157,49 +3155,154 @@ static void TieCockpitRenderer_DcPaletteColour(const TieSnapshot* snap, uint8_t 
 
 static const float k_dc_white[4] = { 0.95f, 0.95f, 0.95f, 1.0f };
 
-/* XWA's radio messages box: its title, then the newest messages, each after
- * its mission time. */
-static void TieCockpitRenderer_DrawDcRadio(TieCockpitRenderer* cg, AeronDrawList2D* list, float w, float h,
-										   const TieSnapshot* snap) {
-	const float line_h = h / 14.0f, x = w * 0.05f;
-	const AeronRectI clip = { 0, 0, (int)w, (int)h };
-	TieCockpitRenderer_DcText(cg, list, x, line_h * 0.5f, line_h * 1.1f, AERON_TEXT_LEFT, "Radio Messages", k_dc_white,
-							  &clip);
-	float y = line_h * 2.0f;
-	for (int i = 0; i < snap->hud.radio_count && y + line_h <= h; ++i, y += line_h) {
-		char time[16];
-		if (snap->hud.radio[i].hours)
-			snprintf(time, sizeof time, "%u:%02u:%02u", snap->hud.radio[i].hours, snap->hud.radio[i].minutes,
-					 snap->hud.radio[i].seconds);
-		else
-			snprintf(time, sizeof time, "%u:%02u", snap->hud.radio[i].minutes, snap->hud.radio[i].seconds);
-		const float time_w = TieCockpitRenderer_DcText(cg, list, x, y, line_h, AERON_TEXT_LEFT, time, k_dc_white, &clip);
-		float colour[4];
-		TieCockpitRenderer_DcPaletteColour(snap, TieCockpitText_RemapColor(snap->hud.radio[i].color), colour);
-		TieCockpitRenderer_DcText(cg, list, x + time_w + line_h * 0.4f, y, line_h, AERON_TEXT_LEFT,
-								  snap->hud.radio[i].text, colour, &clip);
+/* A paragraph flowing in the TFTC screens' font. Text starts at `*pen` on
+ * line `*line` (lines `line_h` apart from `top`), wraps at words between
+ * `left` and `right`, and continues from `indent` on later lines. Lines at
+ * or past `max_lines` are counted but not drawn; a NULL list only counts. */
+typedef struct TieDcFlow {
+	float top, line_h, left, right, indent;
+	int max_lines;
+	float pen;
+	int line;
+} TieDcFlow;
+
+static void TieCockpitRenderer_DcFlow(TieCockpitRenderer* cg, AeronDrawList2D* list, TieDcFlow* flow,
+									  const char* text, const float rgba[4], const AeronRectI* clip) {
+	if (!cg->dc_font.loaded || !cg->dc_font.cell_h)
+		return;
+	const float height = flow->line_h * 0.92f;
+	const AeronTextStyle style = {
+		.font = &cg->dc_font,
+		.scale = height / (float)cg->dc_font.cell_h,
+		.tint = { rgba[0], rgba[1], rgba[2], rgba[3] },
+		.filter = AERON_BLIT2D_FILTER_LINEAR,
+	};
+	const float space = AeronText_MeasureWidth(&style, " ", 1);
+	for (const char* p = text; *p;) {
+		while (*p == ' ')
+			++p;
+		const char* end = p;
+		while (*end && *end != ' ')
+			++end;
+		if (end == p)
+			break;
+		const int length = (int)(end - p);
+		float word_w = AeronText_MeasureWidth(&style, p, length);
+		const float line_start = flow->line ? flow->indent : flow->left;
+		if (flow->pen > line_start && flow->pen + word_w > flow->right) {
+			++flow->line;
+			flow->pen = flow->indent;
+		}
+		/* A word longer than the line is cut at the margin. */
+		int shown = length;
+		while (shown > 1 && flow->pen + word_w > flow->right)
+			word_w = AeronText_MeasureWidth(&style, p, --shown);
+		if (list && flow->line < flow->max_lines)
+			AeronText_Draw(list, &style, flow->pen, flow->top + (float)flow->line * flow->line_h, AERON_TEXT_LEFT, p,
+						   shown, clip);
+		flow->pen += word_w + space;
+		p = end;
 	}
 }
 
-/* XWA's mission goals box: its title, then the goals screen's rows, each run
- * in its own colour. */
+/* The screens sample their targets clamped at the edges, so text kept off
+ * the last texels avoids streaks across the rest of the display. */
+#define TIE_DC_TEXT_MARGIN 0.06f
+
+/* XWA's radio messages box: its title, then the newest messages that fit,
+ * each after its mission time, wrapping under the message. */
+static void TieCockpitRenderer_DrawDcRadio(TieCockpitRenderer* cg, AeronDrawList2D* list, float w, float h,
+										   const TieSnapshot* snap) {
+	const float line_h = h / 20.0f, left = w * TIE_DC_TEXT_MARGIN, right = w * (1.0f - TIE_DC_TEXT_MARGIN);
+	const AeronRectI clip = { 1, 1, (int)w - 2, (int)h - 2 };
+	TieCockpitRenderer_DcText(cg, list, left, line_h * 1.2f, line_h * 1.25f, AERON_TEXT_LEFT, "Radio Messages",
+							  k_dc_white, &clip);
+	const float top = line_h * 3.0f;
+	const int max_lines = (int)((h * (1.0f - TIE_DC_TEXT_MARGIN) - top) / line_h);
+	char times[TIE_HUD_RADIO_LINES][16];
+	int lines[TIE_HUD_RADIO_LINES];
+	float time_w[TIE_HUD_RADIO_LINES];
+	const AeronTextStyle unit = { .font = &cg->dc_font, .scale = line_h * 0.92f / (float)(cg->dc_font.cell_h ? cg->dc_font.cell_h : 1) };
+	for (int i = 0; i < snap->hud.radio_count; ++i) {
+		if (snap->hud.radio[i].hours)
+			snprintf(times[i], sizeof times[i], "%u:%02u:%02u", snap->hud.radio[i].hours, snap->hud.radio[i].minutes,
+					 snap->hud.radio[i].seconds);
+		else
+			snprintf(times[i], sizeof times[i], "%u:%02u", snap->hud.radio[i].minutes, snap->hud.radio[i].seconds);
+		time_w[i] = AeronText_MeasureWidth(&unit, times[i], -1) + line_h * 0.4f;
+		TieDcFlow measure = { .left = left + time_w[i], .right = right, .indent = left + time_w[i], .pen = left + time_w[i],
+							  .line_h = line_h, .max_lines = 0 };
+		TieCockpitRenderer_DcFlow(cg, NULL, &measure, snap->hud.radio[i].text, k_dc_white, &clip);
+		lines[i] = measure.line + 1;
+	}
+	/* Oldest first, dropping the oldest messages that do not fit. */
+	int first = snap->hud.radio_count, used = 0;
+	while (first > 0 && used + lines[first - 1] <= max_lines)
+		used += lines[--first];
+	float y = top;
+	for (int i = first; i < snap->hud.radio_count; ++i) {
+		TieCockpitRenderer_DcText(cg, list, left, y, line_h * 0.92f, AERON_TEXT_LEFT, times[i], k_dc_white, &clip);
+		float colour[4];
+		TieCockpitRenderer_DcPaletteColour(snap, TieCockpitText_RemapColor(snap->hud.radio[i].color), colour);
+		TieDcFlow flow = { .top = y, .left = left + time_w[i], .right = right, .indent = left + time_w[i],
+						   .pen = left + time_w[i], .line_h = line_h, .max_lines = lines[i] };
+		TieCockpitRenderer_DcFlow(cg, list, &flow, snap->hud.radio[i].text, colour, &clip);
+		y += (float)lines[i] * line_h;
+	}
+}
+
+/* XWA's mission goals box: its title, the outcome, score and bonus, then the
+ * goals screen's rows. Rows the screen centres (the goal categories) stay
+ * centred; goal rows wrap with their continuation indented. */
 static void TieCockpitRenderer_DrawDcGoals(TieCockpitRenderer* cg, AeronDrawList2D* list, float w, float h,
 										   const TieSnapshot* snap) {
-	const float line_h = h / 16.0f, x = w * 0.05f;
-	const AeronRectI clip = { 0, 0, (int)w, (int)h };
-	TieCockpitRenderer_DcText(cg, list, w * 0.95f, line_h * 0.5f, line_h * 1.2f, AERON_TEXT_RIGHT, "Mission Goals",
+	const float line_h = h / 22.0f, left = w * TIE_DC_TEXT_MARGIN, right = w * (1.0f - TIE_DC_TEXT_MARGIN);
+	const AeronRectI clip = { 1, 1, (int)w - 2, (int)h - 2 };
+	TieCockpitRenderer_DcText(cg, list, right, line_h * 1.2f, line_h * 1.3f, AERON_TEXT_RIGHT, "Mission Goals",
 							  k_dc_white, &clip);
-	float y = line_h * 2.2f;
-	for (int i = 0; i < snap->hud.objective_count && y + line_h <= h; y += line_h) {
+	static const char* const k_outcomes[3] = { "Unresolved", "Victory", "Failed" };
+	float header[4];
+	TieCockpitRenderer_DcPaletteColour(snap, 0x3A, header);
+	char text[96];
+	snprintf(text, sizeof text, "Outcome: %s",
+			 k_outcomes[snap->hud.goals_outcome < 3 ? snap->hud.goals_outcome : 0]);
+	const float centre = (left + right) * 0.5f, row_h = line_h * 0.92f;
+	float y = line_h * 2.9f;
+	TieCockpitRenderer_DcText(cg, list, centre, y, row_h, AERON_TEXT_CENTER, text, header, &clip);
+	y += line_h;
+	snprintf(text, sizeof text, "Score: %d   Bonus: %d", (int)snap->hud.goals_score, (int)snap->hud.goals_bonus);
+	TieCockpitRenderer_DcText(cg, list, centre, y, row_h, AERON_TEXT_CENTER, text, header, &clip);
+	y += line_h * 1.4f;
+	const float bottom = h * (1.0f - TIE_DC_TEXT_MARGIN);
+	for (int i = 0; i < snap->hud.objective_count && y + line_h <= bottom;) {
 		const int first = i;
-		/* Rows the goals screen centres are headings; goal rows indent. */
-		float pen = x + (snap->hud.objectives[first].x > 12 ? 0.0f : line_h);
+		const bool centred = snap->hud.objectives[first].x > 12;
+		if (centred) {
+			/* A category heading: its runs measured and centred together. */
+			float total = 0.0f;
+			for (int j = i; j < snap->hud.objective_count && snap->hud.objectives[j].y == snap->hud.objectives[first].y; ++j) {
+				const AeronTextStyle unit = { .font = &cg->dc_font,
+											  .scale = row_h / (float)(cg->dc_font.cell_h ? cg->dc_font.cell_h : 1) };
+				total += AeronText_MeasureWidth(&unit, snap->hud.objectives[j].text, -1);
+			}
+			float pen = centre - total * 0.5f;
+			for (; i < snap->hud.objective_count && snap->hud.objectives[i].y == snap->hud.objectives[first].y; ++i) {
+				float colour[4];
+				TieCockpitRenderer_DcPaletteColour(snap, snap->hud.objectives[i].color, colour);
+				pen += TieCockpitRenderer_DcText(cg, list, pen, y, row_h, AERON_TEXT_LEFT, snap->hud.objectives[i].text,
+												 colour, &clip);
+			}
+			y += line_h;
+			continue;
+		}
+		TieDcFlow flow = { .top = y, .left = left, .right = right, .indent = left + line_h, .pen = left,
+						   .line_h = line_h, .max_lines = (int)((bottom - y) / line_h) };
 		for (; i < snap->hud.objective_count && snap->hud.objectives[i].y == snap->hud.objectives[first].y; ++i) {
 			float colour[4];
 			TieCockpitRenderer_DcPaletteColour(snap, snap->hud.objectives[i].color, colour);
-			pen += TieCockpitRenderer_DcText(cg, list, pen, y, line_h, AERON_TEXT_LEFT, snap->hud.objectives[i].text,
-											 colour, &clip);
+			TieCockpitRenderer_DcFlow(cg, list, &flow, snap->hud.objectives[i].text, colour, &clip);
 		}
+		y += (float)(flow.line + 1) * line_h;
 	}
 }
 
@@ -3510,9 +3613,12 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 		const TieHudInstrument* ins = &snap->hud.instruments[TIE_HUDI_THROTTLE_DIGITS];
 		if (!TieCockpitCommon_InstrumentActive(ins) || ins->value < 0)
 			return;
-		static const float k_yellow[3] = { 0.95f, 0.85f, 0.1f };
-		const int lit = (ins->value * 10 + 50) / 100;
-		TieCockpitRenderer_DcSegments(surface->list, w, h, 10, lit, 10, k_yellow, k_yellow);
+		/* XWA's render_throttle in throttle_color (TFTC: yellow): the bar lit
+		 * from the left to the throttle setting, the rest left dark so the
+		 * cockpit's dot row shows through. */
+		const float lit = (float)(ins->value < 0 ? 0 : ins->value > 100 ? 100 : ins->value) / 100.0f;
+		if (lit > 0.0f)
+			TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, w * lit, h, 1.0f, 0.92f, 0.15f, 1.0f);
 		return;
 	}
 	/* Recharge strips: one segment per power step (0..4, 2 normal), yellow above normal. */

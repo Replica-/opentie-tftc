@@ -177,6 +177,36 @@ static void TieHudSnapshot_CaptureObjectives(TieHudState* hud) {
 	}
 }
 
+/* The goals header: outcome, score so far and bonus points. The score is
+ * fediskio's end-of-mission sum without its end-only terms (ejection,
+ * friendly fire, collisions, goal completion): kills and captures weighted
+ * by kill value and difficulty, plus hits and less shots fired. */
+static void TieHudSnapshot_CaptureGoalsHeader(TieHudState* hud, const CraftData* craft) {
+	hud->goals_outcome = mission.primary_complete;
+	if (mission.train_craft_type) {
+		hud->goals_score = mission.mission_score;
+		hud->goals_bonus = mission.train_bonus;
+		return;
+	}
+	int32_t score = 50 * craft->total_kills;
+	for (int i = 0; i < NUM_SPEC; ++i) {
+		const int32_t kv = spec_data[i].kill_value;
+		score += 200 * mission.captures_by_type[i] * kv + 40 * kv * craft->kills_by_species[i];
+	}
+	const int32_t quarter = score >> 2;
+	if (mission.difficulty == 0)
+		score -= quarter;
+	else if (mission.difficulty == 2)
+		score += quarter;
+	score += 3 * craft->laser_hit - craft->laser_fired + 100 * craft->warhead_hit - 50 * craft->warhead_fired;
+	int32_t bonus = 0;
+	for (int i = 0; i < (int)mission_file_header.num_fg; ++i)
+		if (fgstatus[i].fg_complete == 1)
+			bonus += 50 * fg_array[i].bonus_points;
+	hud->goals_score = score > 0 ? score : 0;
+	hud->goals_bonus = bonus;
+}
+
 static void TieHudSnapshot_CaptureHud(void) {
 	TieHudState* hud = TieSnapshotBuilder_HudMut();
 
@@ -198,6 +228,7 @@ static void TieHudSnapshot_CaptureHud(void) {
 			hud->repairs[i].repair_seconds = pstate.subsystem_repair_seconds[i];
 		}
 		TieHudSnapshot_CaptureObjectives(hud);
+		TieHudSnapshot_CaptureGoalsHeader(hud, pc);
 		hud->status_flags = pc->status_flags;
 		hud->weapon_group_cnt = pc->weapon_group_cnt;
 		if (spec_data[pstate.player_spec_num].missile_count[0] +

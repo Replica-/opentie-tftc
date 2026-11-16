@@ -42,6 +42,16 @@ static const struct {
 	{ "SHIELDS_FRONT_SRC", TIE_DC_SHIELD_FRONT_TEXT },
 	{ "SHIELDS_BACK_SRC", TIE_DC_SHIELD_BACK_TEXT },
 	{ "AUTOSIZE_CHAFF_SRC", TIE_DC_CHAFF },
+	{ "B_WING_LASERS_SRC", TIE_DC_LASERS },
+	{ "AUTOSIZE_NAME_SRC", TIE_DC_TARGET_NAME },
+	{ "TARGETED_OBJ_NAME_SRC", TIE_DC_TARGET_NAME },
+	{ "TARGETED_OBJ_SHD_SRC", TIE_DC_TARGET_SHIELDS },
+	{ "TARGETED_OBJ_HULL_SRC", TIE_DC_TARGET_HULL },
+	{ "TARGETED_OBJ_SYS_SRC", TIE_DC_TARGET_SYSTEM },
+	{ "TARGETED_OBJ_DIST_SRC", TIE_DC_TARGET_DISTANCE },
+	{ "TARGETED_OBJ_CARGO_SRC", TIE_DC_TARGET_CARGO },
+	{ "TARGETED_OBJ_SUBCMP_SRC", TIE_DC_TARGET_PART },
+	{ "AUTOSIZE_MISSILES_MIS_SRC", TIE_DC_MISSILES_ALL },
 };
 
 TieDcSource TieDcLayout_SourceOf(int id) {
@@ -263,4 +273,16 @@ bool TieDcLayout_Build(const char* source_text, const opt_file_t* opt, TieDcLayo
 	}
 	free(text);
 	return out->count > 0;
+}
+
+bool TieDcLayout_PlaceTexture(const opt_file_t* opt, const char* name, TieDcScreen* out) {
+	memset(out, 0, sizeof *out);
+	const int texture = opt ? TieDcLayout_FindTexture(opt, name, strlen(name)) : -1;
+	if (texture < 0)
+		return false;
+	if (TieDcLayout_Place(opt, texture, 0.0f, 0.0f, 1.0f, 1.0f, out))
+		return true;
+	free(out->triangles);
+	memset(out, 0, sizeof *out);
+	return false;
 }

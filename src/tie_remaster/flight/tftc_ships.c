@@ -102,15 +102,19 @@ static TieFlightTftcMaterial* TieFlightTftcShips_AddMaterial(TieFlightTftcMateri
 }
 
 /* Reads the [Default] and per-texture sections of an XWA effects .mat file.
- * A texture section starts from the [Default] values. Keys other than
- * Metallic, Glossiness and Shadeless, and the animation lines, are ignored. */
+ * A section header lists one or more texture names split on ','; each starts
+ * from the [Default] values. Keys other than Metallic, Glossiness and
+ * Shadeless, and the animation lines, are ignored. */
 static void TieFlightTftcShips_ParseMaterials(char* text, TieFlightTftcMaterials* out) {
 	TieFlightTftcMaterial defaults = {
 		.metallic = TIE_FLIGHT_TFTC_DEFAULT_METALLIC,
 		.glossiness = TIE_FLIGHT_TFTC_DEFAULT_GLOSSINESS,
 	};
-	TieFlightTftcMaterial* current = TieFlightTftcShips_AddMaterial(out, "", &defaults);
-	for (char* line = strtok(text, "\n"); line && current; line = strtok(NULL, "\n")) {
+	if (!TieFlightTftcShips_AddMaterial(out, "", &defaults))
+		return;
+	/* The section's materials, by index: their storage may move as it grows. */
+	size_t first = 0, end = 1;
+	for (char* line = strtok(text, "\n"); line; line = strtok(NULL, "\n")) {
 		char* comment = strchr(line, ';');
 		if (comment)
 			*comment = '\0';
@@ -120,9 +124,23 @@ static void TieFlightTftcShips_ParseMaterials(char* text, TieFlightTftcMaterials
 			if (!close)
 				continue;
 			*close = '\0';
-			const char* section = TieFlightTftcShips_Trim(line + 1);
-			current = TieFlightTftcShips_NameEqual(section, "Default") ? &out->items[0]
-														: TieFlightTftcShips_AddMaterial(out, section, &out->items[0]);
+			first = out->count;
+			for (char* name = line + 1; *name;) {
+				char* comma = strchr(name, ',');
+				if (comma)
+					*comma = '\0';
+				const char* section = TieFlightTftcShips_Trim(name);
+				if (TieFlightTftcShips_NameEqual(section, "Default")) {
+					first = 0;
+					break;
+				}
+				if (section[0] && !TieFlightTftcShips_AddMaterial(out, section, &out->items[0]))
+					return;
+				if (!comma)
+					break;
+				name = comma + 1;
+			}
+			end = first == 0 ? 1 : out->count;
 			continue;
 		}
 		char* equals = strchr(line, '=');
@@ -133,12 +151,15 @@ static void TieFlightTftcShips_ParseMaterials(char* text, TieFlightTftcMaterials
 		const float value = strtof(TieFlightTftcShips_Trim(equals + 1), NULL);
 		if (!isfinite(value))
 			continue;
-		if (TieFlightTftcShips_NameEqual(key, "Metallic"))
-			current->metallic = value;
-		else if (TieFlightTftcShips_NameEqual(key, "Glossiness"))
-			current->glossiness = value;
-		else if (TieFlightTftcShips_NameEqual(key, "Shadeless"))
-			current->shadeless = value != 0.0f;
+		for (size_t i = first; i < end; ++i) {
+			TieFlightTftcMaterial* current = &out->items[i];
+			if (TieFlightTftcShips_NameEqual(key, "Metallic"))
+				current->metallic = value;
+			else if (TieFlightTftcShips_NameEqual(key, "Glossiness"))
+				current->glossiness = value;
+			else if (TieFlightTftcShips_NameEqual(key, "Shadeless"))
+				current->shadeless = value != 0.0f;
+		}
 	}
 }
 

@@ -8,9 +8,11 @@
 #include "aeron/asset/opt_model.h"
 #include "aeron/log.h"
 #include "aeron/render.h"
+#include "aeron/time.h"
 #include "aeron/scene/mesh.h"
 #include "aeron/vfs.h"
 #include "opt.h"
+#include "tie_remaster/flight/cockpit/dc_effects.h"
 #include "tie_remaster/flight/cockpit/dc_layout.h"
 #include "tie_remaster/flight/render_math.h"
 #include "tie_remaster/flight/renderer_internal.h"
@@ -143,34 +145,114 @@ static const TieFlightCockpit3dModel k_cockpit3d_models[] = {
 #define TIE_FLIGHT_COCKPIT3D_YOKE_PITCH_DEG 8.0f
 #define TIE_FLIGHT_COCKPIT3D_YOKE_TURN_DEG 20.0f
 
-/* A cockpit's yoke: the OPT meshes of its column and what rides on it, where
- * the column meets the floor and the way it runs from there to the grips, in
- * OPT units. The stick tilts it about that point, fore and aft with pitch,
- * and turns it about the column with yaw and roll. */
+#define TIE_FLIGHT_COCKPIT3D_YOKE_MAX_MESHES 16
+#define TIE_FLIGHT_COCKPIT3D_YOKE_MAX_TEXTURES 32
+
+/* A cockpit's yoke, as TFTC's effects .mat defines it: the faces of every
+ * texture with a JoystickRoot turn about that point (metres, OPT axes, like
+ * the [CockpitPov] eye: the TIE Bomber's sits at x = +52). Here the OPT
+ * meshes carrying those textures turn: tilted fore and aft with pitch, and
+ * turned like a wheel about the column, which runs from the root up and back
+ * toward the grips, with yaw and roll. */
 typedef struct TieFlightCockpit3dYoke {
-	const char* model;
-	int meshes[4];
+	int meshes[TIE_FLIGHT_COCKPIT3D_YOKE_MAX_MESHES];
 	int mesh_count;
-	float pivot[3];
+	float pivot[3]; /* OPT units */
 	float column[3];
 } TieFlightCockpit3dYoke;
 
-static const TieFlightCockpit3dYoke k_cockpit3d_yokes[] = {
-	/* The column, and the targeting computer between its grips. The TIE
-	 * cockpits share it; the bomber's sits off centre, the Avenger's a
-	 * little further forward and higher. */
-	{ "TieFighterCockpit", { 17, 31 }, 2, { 0.0f, -36.0f, -28.0f }, { 0.0f, 18.0f, 19.0f } },
-	{ "TieInterceptorCockpit", { 3, 10 }, 2, { 0.0f, -36.0f, -28.0f }, { 0.0f, 18.0f, 19.0f } },
-	{ "TieDefenderCockpit", { 3, 10 }, 2, { 0.0f, -36.0f, -28.0f }, { 0.0f, 18.0f, 19.0f } },
-	{ "TieBomberCockpit", { 2, 20 }, 2, { -52.0f, -78.9f, -28.0f }, { 0.0f, 18.0f, 19.0f } },
-	{ "TieAvengerCockpit", { 3, 7 }, 2, { 0.0f, -37.6f, -25.7f }, { 0.0f, 18.0f, 19.0f } },
-};
+static TieFlightCockpit3dYoke s_cockpit3d_yoke;
 
-static const TieFlightCockpit3dYoke* TieFlightCockpit3d_YokeOf(const char* model) {
-	for (size_t i = 0; i < sizeof k_cockpit3d_yokes / sizeof k_cockpit3d_yokes[0]; ++i)
-		if (strcmp(k_cockpit3d_yokes[i].model, model) == 0)
-			return &k_cockpit3d_yokes[i];
-	return NULL;
+static bool TieFlightCockpit3d_NameEqual(const char* left, const char* right) {
+	for (; *left && *right; ++left, ++right) {
+		const char a = (char)(*left >= 'a' && *left <= 'z' ? *left - 32 : *left);
+		const char b = (char)(*right >= 'a' && *right <= 'z' ? *right - 32 : *right);
+		if (a != b)
+			return false;
+	}
+	return *left == *right;
+}
+
+/* Reads the joystick textures and root from `mat` (the .mat text, changed in
+ * place). Section headers list texture names split on ','. */
+static int TieFlightCockpit3d_ReadJoystick(char* mat, char names[][16], int capacity, float root[3]) {
+	int count = 0, section_end = 0;
+	for (char* line = strtok(mat, "\n"); line; line = strtok(NULL, "\n")) {
+		while (*line == ' ' || *line == '\t')
+			++line;
+		if (line[0] == '[') {
+			/* A section's names wait after the kept ones until it turns out
+			 * to define the joystick. */
+			section_end = count;
+			for (char* p = line + 1; *p && *p != ']' && section_end < capacity;) {
+				size_t n = strcspn(p, ",]\r");
+				snprintf(names[section_end++], 16, "%.*s", (int)n, p);
+				p += n;
+				if (*p == ',')
+					++p;
+			}
+			continue;
+		}
+		if (strncmp(line, "JoystickRoot", 12) != 0)
+			continue;
+		const char* equals = strchr(line, '=');
+		float x, y, z;
+		if (equals && sscanf(equals + 1, " %f , %f , %f", &x, &y, &z) == 3) {
+			root[0] = x;
+			root[1] = y;
+			root[2] = z;
+			count = section_end;
+		}
+	}
+	return count;
+}
+
+/* The yoke of `model` from its cockpit3d/<model>.mat, or NULL without one:
+ * the meshes whose first LOD shows a joystick texture. */
+static const TieFlightCockpit3dYoke* TieFlightCockpit3d_YokeOf(TieFlightRenderer* g, const opt_file_t* opt,
+															   const char* model) {
+	char path[96];
+	snprintf(path, sizeof path, "cockpit3d/%s.mat", model);
+	uint8_t* bytes = NULL;
+	size_t size = 0;
+	if (!AeronVfs_ReadAll(g->assets->vfs, AERON_VFS_ROOT_RESOURCE, path, 1024u * 1024u, &bytes, &size))
+		return NULL;
+	char* text = malloc(size + 1);
+	if (!text) {
+		free(bytes);
+		return NULL;
+	}
+	memcpy(text, bytes, size);
+	text[size] = '\0';
+	free(bytes);
+	char names[TIE_FLIGHT_COCKPIT3D_YOKE_MAX_TEXTURES][16];
+	float root[3] = { 0.0f, 0.0f, 0.0f };
+	const int name_count = TieFlightCockpit3d_ReadJoystick(text, names, TIE_FLIGHT_COCKPIT3D_YOKE_MAX_TEXTURES, root);
+	free(text);
+	TieFlightCockpit3dYoke* yoke = &s_cockpit3d_yoke;
+	memset(yoke, 0, sizeof *yoke);
+	for (int m = 0; m < opt->mesh_count && yoke->mesh_count < TIE_FLIGHT_COCKPIT3D_YOKE_MAX_MESHES; ++m) {
+		const opt_mesh_t* mesh = &opt->meshes[m];
+		bool joystick = false;
+		for (int gr = 0; mesh->lod_count > 0 && gr < mesh->lods[0].group_count && !joystick; ++gr) {
+			const int t = mesh->lods[0].groups[gr].texture_index;
+			for (int n = 0; t >= 0 && t < opt->texture_count && n < name_count && !joystick; ++n)
+				joystick = TieFlightCockpit3d_NameEqual(opt->textures[t].name, names[n]);
+		}
+		if (joystick)
+			yoke->meshes[yoke->mesh_count++] = m;
+	}
+	if (!yoke->mesh_count)
+		return NULL;
+	for (int k = 0; k < 3; ++k)
+		yoke->pivot[k] = root[k] * AERON_OPT_UNITS_PER_METER;
+	/* From the root up and back toward the grips, as in TFTC's TIE cockpits. */
+	yoke->column[0] = 0.0f;
+	yoke->column[1] = 18.0f;
+	yoke->column[2] = 19.0f;
+	Aeron_LogInfo("tie.cockpit3d", "%s: yoke of %d meshes about %.1f %.1f %.1f", path, yoke->mesh_count,
+				  yoke->pivot[0], yoke->pivot[1], yoke->pivot[2]);
+	return yoke;
 }
 
 static bool TieFlightCockpit3d_OnYoke(const TieFlightCockpit3dYoke* yoke, int mesh) {
@@ -185,6 +267,60 @@ static bool TieFlightCockpit3d_Listed(const int* list, int count, int mesh) {
 		if (list[i] == mesh)
 			return true;
 	return false;
+}
+
+/* The cover_texture images of a .dc file as effects lines (dc_effects.h):
+ * "[<Texture>]" and "cover_seq = Effects\<File>.dat, (<group>-<image>, 1, 1)"
+ * for each, under the texture of its [<Cockpit>.opt,<Texture>] section. */
+static char* TieFlightCockpit3d_CoverLines(const char* dc_text) {
+	const size_t capacity = strlen(dc_text) + 1;
+	char* out = malloc(capacity);
+	char* text = malloc(capacity);
+	if (!out || !text) {
+		free(out);
+		free(text);
+		return NULL;
+	}
+	memcpy(text, dc_text, capacity);
+	size_t used = 0;
+	out[0] = '\0';
+	char texture[32] = "";
+	for (char* line = strtok(text, "\n"); line; line = strtok(NULL, "\n")) {
+		while (*line == ' ' || *line == '\t')
+			++line;
+		if (line[0] == '[') {
+			const char* comma = strchr(line, ',');
+			const char* close = strchr(line, ']');
+			texture[0] = '\0';
+			if (comma && close && close > comma)
+				snprintf(texture, sizeof texture, "%.*s", (int)(close - comma - 1), comma + 1);
+			continue;
+		}
+		char file[96];
+		int group, image;
+		if (!texture[0] || strncmp(line, "cover_texture", 13) != 0 ||
+			sscanf(line, "cover_texture = %95[^-\r]-%d-%d", file, &group, &image) != 3)
+			continue;
+		const int n = snprintf(out + used, capacity - used, "[%s]\ncover_seq = %s, (%d-%d, 1, 1)\n", texture, file,
+							   group, image);
+		if (n > 0 && (size_t)n < capacity - used)
+			used += (size_t)n;
+	}
+	free(text);
+	return out;
+}
+
+/* A screen's meshes, indexed in the OPT without its `hidden` meshes, by their
+ * index in the whole OPT. */
+static void TieFlightCockpit3d_RemapMeshes(TieDcScreen* screen, const int* hidden, int hidden_count, int total) {
+	for (int t = 0; t < screen->triangle_count; ++t) {
+		int* mesh = &screen->triangles[t].mesh;
+		for (int m = 0, n = 0; m < total; ++m)
+			if (!TieFlightCockpit3d_Listed(hidden, hidden_count, m) && n++ == *mesh) {
+				*mesh = m;
+				break;
+			}
+	}
 }
 
 static const char* TieFlightCockpit3d_ModelForView(const char* view_name) {
@@ -228,6 +364,7 @@ void TieFlightCockpit3d_Release(TieFlightRenderer* g) {
 	g->cockpit3d_active = false;
 	TieDcLayout_Free(&g->cockpit3d_dc);
 	g->cockpit3d_dc_loaded = false;
+	TieDcEffects_Free(&g->cockpit3d_effects);
 }
 
 static bool TieFlightCockpit3d_BuildChunk(TieFlightRenderer* g, AeronCommandBuffer* cmd, const uint8_t* bytes,
@@ -288,7 +425,6 @@ static void TieFlightCockpit3d_BuildRuns(TieFlightRenderer* g, AeronCommandBuffe
 static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cmd, const char* model) {
 	TieFlightCockpit3d_Release(g);
 	g->cockpit3d_model = model;
-	g->cockpit3d_yoke = TieFlightCockpit3d_YokeOf(model);
 
 	char path[96];
 	snprintf(path, sizeof path, "cockpit3d/%s.opt", model);
@@ -306,6 +442,7 @@ static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cm
 		return;
 	}
 	const int total = opt->mesh_count;
+	g->cockpit3d_yoke = TieFlightCockpit3d_YokeOf(g, opt, model);
 
 	/* The craft's object profile, from <Name>.ini, hides cockpit meshes too:
 	 * they are left out of the model and their displays. */
@@ -327,7 +464,9 @@ static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cm
 		}
 	}
 
-	/* Where the cockpit shows each HUD display, from DynamicCockpit/<Name>.dc. */
+	/* Where the cockpit shows each HUD display, from DynamicCockpit/<Name>.dc,
+	 * and the cover images over them. */
+	char* cover_text = NULL;
 	char dc_path[96];
 	snprintf(dc_path, sizeof dc_path, "cockpit3d/%s.dc", model);
 	uint8_t* dc_bytes = NULL;
@@ -338,19 +477,10 @@ static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cm
 			memcpy(dc_text, dc_bytes, dc_size);
 			dc_text[dc_size] = '\0';
 			g->cockpit3d_dc_loaded = TieDcLayout_Build(dc_text, &shown, &g->cockpit3d_dc);
+			cover_text = TieFlightCockpit3d_CoverLines(dc_text);
 			free(dc_text);
-			/* Each screen's meshes by their index in the whole OPT. */
-			for (int s = 0; shown_meshes && s < g->cockpit3d_dc.count; ++s) {
-				const TieDcScreen* screen = &g->cockpit3d_dc.screens[s];
-				for (int t = 0; t < screen->triangle_count; ++t) {
-					int* mesh = &screen->triangles[t].mesh;
-					for (int m = 0, n = 0; m < total; ++m)
-						if (!TieFlightCockpit3d_Listed(hidden, hidden_count, m) && n++ == *mesh) {
-							*mesh = m;
-							break;
-						}
-				}
-			}
+			for (int s = 0; shown_meshes && s < g->cockpit3d_dc.count; ++s)
+				TieFlightCockpit3d_RemapMeshes(&g->cockpit3d_dc.screens[s], hidden, hidden_count, total);
 		}
 		free(dc_bytes);
 		Aeron_LogInfo("tie.cockpit3d", "%s: %d HUD screens", dc_path,
@@ -360,6 +490,31 @@ static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cm
 	}
 	s_cockpit3d_fov_deg = g->cockpit3d_dc_loaded && g->cockpit3d_dc.fov_deg > 0.0f ? g->cockpit3d_dc.fov_deg
 																				   : TIE_FLIGHT_COCKPIT3D_FOV_DEG;
+
+	/* The image sequences the cockpit's effects .mat plays on its textures. */
+	char effects_path[96];
+	snprintf(effects_path, sizeof effects_path, "cockpit3d/%s.mat", model);
+	uint8_t* effects_bytes = NULL;
+	size_t effects_size = 0;
+	if (AeronVfs_ReadAll(g->assets->vfs, AERON_VFS_ROOT_RESOURCE, effects_path, 1024u * 1024u, &effects_bytes,
+						 &effects_size)) {
+		const size_t cover_size = cover_text ? strlen(cover_text) : 0;
+		char* effects_text = malloc(effects_size + 1 + cover_size + 1);
+		if (effects_text) {
+			memcpy(effects_text, effects_bytes, effects_size);
+			effects_text[effects_size] = '\n';
+			memcpy(effects_text + effects_size + 1, cover_text ? cover_text : "", cover_size + 1);
+			TieDcEffects_Build(&g->cockpit3d_effects, cmd, g->assets->vfs, effects_text, &shown);
+			free(effects_text);
+			for (int e = 0; shown_meshes && e < g->cockpit3d_effects.count; ++e)
+				TieFlightCockpit3d_RemapMeshes(&g->cockpit3d_effects.items[e].faces, hidden, hidden_count, total);
+			g->cockpit3d_effects_start_us = Aeron_NowUs();
+			Aeron_LogInfo("tie.cockpit3d", "%s: %d image sequences, %d frames", effects_path,
+						  g->cockpit3d_effects.count, g->cockpit3d_effects.texture_count);
+		}
+		free(effects_bytes);
+	}
+	free(cover_text);
 	TieFlightCockpit3d_LoadEye(g, model);
 	TieFlightCockpit3d_CheckEye(g, model);
 	free(shown_meshes);
@@ -490,6 +645,13 @@ bool TieFlightRenderer_Cockpit3dActive(const TieFlightRenderer* g) { return g &&
 
 const char* TieFlightRenderer_Cockpit3dModel(const TieFlightRenderer* g) {
 	return g && g->cockpit3d_active ? g->cockpit3d_model : NULL;
+}
+
+const TieDcEffects* TieFlightRenderer_Cockpit3dEffects(const TieFlightRenderer* g, double* seconds) {
+	if (!g || !g->cockpit3d_active || !g->cockpit3d_effects.count)
+		return NULL;
+	*seconds = (double)(Aeron_NowUs() - g->cockpit3d_effects_start_us) / 1e6;
+	return &g->cockpit3d_effects;
 }
 
 const TieDcLayout* TieFlightRenderer_Cockpit3dLayout(const TieFlightRenderer* g) {

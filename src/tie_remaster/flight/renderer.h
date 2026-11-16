@@ -91,6 +91,9 @@ bool TieFlightRenderer_Cockpit3dSurfaceAt(const TieFlightRenderer* g, float x, f
  * camera-local world point to clip space, for this frame's flight camera. */
 bool TieFlightRenderer_ScreenRay(const TieFlightRenderer* g, float x, float y, float origin[3], float dir[3]);
 void TieFlightRenderer_ProjectLocal(const TieFlightRenderer* g, const float point[3], float clip[4]);
+/* The effects image sequences of the 3D cockpit drawn this frame, or NULL;
+ * `seconds` gets the time since the cockpit loaded, which times them. */
+const struct TieDcEffects* TieFlightRenderer_Cockpit3dEffects(const TieFlightRenderer* g, double* seconds);
 /* The TFTC DC screens of the 3D cockpit drawn this frame, or NULL. */
 const struct TieDcLayout* TieFlightRenderer_Cockpit3dLayout(const TieFlightRenderer* g);
 /* Clip-space position of a 3D cockpit model point (metres) on OPT mesh `mesh`,

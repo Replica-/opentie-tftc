@@ -12,6 +12,7 @@ add_library(tie_remaster STATIC
     flight/classic_draw.c
     flight/cockpit3d.c
     flight/cockpit/dc_layout.c
+    flight/cockpit/dc_effects.c
     flight/cockpit/editor.c
     flight/mesh_draw.c
     flight/scene_mesh.c
@@ -45,7 +46,7 @@ target_include_directories(tie_remaster PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_include_directories(tie_remaster PRIVATE ${CMAKE_SOURCE_DIR}/aeron/third_party/stb)
 target_link_libraries(tie_remaster
     PUBLIC aeron aeron_scene aeron_asset tie_formats
-    PRIVATE tie_core tie_remaster_scene2d lucas_opt PkgConfig::ZSTD tie_libm)
+    PRIVATE tie_core tie_remaster_scene2d lucas_opt aeron_xwau_dat PkgConfig::ZSTD tie_libm)
 target_compile_definitions(tie_remaster PRIVATE TIE_SHADER_DIR="${TIE_SHADER_BINARY_DIR}")
 if(TIE_GPU_DEBUG_LABELS)
     target_compile_definitions(tie_remaster PRIVATE TIE_GPU_DEBUG_LABELS=1)

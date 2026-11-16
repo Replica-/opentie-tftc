@@ -146,6 +146,13 @@ for name in TieFighterCockpit TieInterceptorCockpit TieBomberCockpit TieAvengerC
     echo "$name <- $(basename "$opt")${mat:+ + $(basename "$mat")}${dc:+ + $(basename "$dc")}${ini:+ + $(basename "$ini")}"
 done
 
+# The Effects DATs whose image sequences the cockpits' .mat files play.
+mkdir -p "$cockpits/Effects"
+for name in TieFighterCockpit AssaultGunboat AssaultGunboatCockpit MissileBoatCockpit; do
+    dat="$(find_ci "$tftc/Effects" "$name.dat")"
+    [ -n "$dat" ] && cp "$dat" "$cockpits/Effects/$name.dat" && echo "Effects/$name.dat"
+done
+
 # The digital iMUSE soundtrack (Music/*.IMC), played with the TFTC music source.
 if [ -d "$tftc/Music" ]; then
     mkdir -p "$out/music"

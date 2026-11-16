@@ -22,7 +22,7 @@ typedef enum TieDcSource {
 	TIE_DC_LEFT_SENSOR,   /* LEFT_SENSOR_SRC: front radar */
 	TIE_DC_RIGHT_SENSOR,  /* RIGHT_SENSOR_SRC: rear radar */
 	TIE_DC_SHIELDS,       /* SHIELDS_SRC: shields and hull */
-	TIE_DC_LASERS,        /* DUAL_LASERS_*_SRC: laser charge */
+	TIE_DC_LASERS,        /* *_LASERS_*_SRC, B_WING_LASERS_SRC: laser charge */
 	TIE_DC_MISSILES,      /* MISSILES_SRC, AUTOSIZE_MISSILES_*_SRC: warheads */
 	TIE_DC_SPEED,         /* SPEED_THROTTLE_SRC, AUTOSIZE_SPEED_SRC: speed and throttle */
 	TIE_DC_BEAM,          /* BEAM_LEVEL_SRC: beam weapon */
@@ -36,6 +36,14 @@ typedef enum TieDcSource {
 	TIE_DC_SHIELD_BACK_TEXT,  /* SHIELDS_BACK_SRC: rear shield percentage */
 	TIE_DC_SHIELD_BARS,       /* TIE's shield LED bars: XWA shows a ring instead, so never on a screen */
 	TIE_DC_CHAFF,             /* AUTOSIZE_CHAFF_SRC: countermeasures, which TIE craft never carry */
+	TIE_DC_TARGET_NAME,       /* AUTOSIZE_NAME_SRC, TARGETED_OBJ_NAME_SRC: the target's name */
+	TIE_DC_TARGET_SHIELDS,    /* TARGETED_OBJ_SHD_SRC */
+	TIE_DC_TARGET_HULL,       /* TARGETED_OBJ_HULL_SRC */
+	TIE_DC_TARGET_SYSTEM,     /* TARGETED_OBJ_SYS_SRC */
+	TIE_DC_TARGET_DISTANCE,   /* TARGETED_OBJ_DIST_SRC */
+	TIE_DC_TARGET_CARGO,      /* TARGETED_OBJ_CARGO_SRC */
+	TIE_DC_TARGET_PART,       /* TARGETED_OBJ_SUBCMP_SRC: the targeted subsystem */
+	TIE_DC_MISSILES_ALL,      /* AUTOSIZE_MISSILES_MIS_SRC: every launcher's warheads */
 	TIE_DC_SOURCE_COUNT,
 } TieDcSource;
 
@@ -71,6 +79,10 @@ typedef struct TieDcLayout {
  * file is found on the model. */
 bool TieDcLayout_Build(const char* text, const opt_file_t* opt, TieDcLayout* out);
 void TieDcLayout_Free(TieDcLayout* layout);
+/* Every face of texture `name` (any case) as a screen whose display is the
+ * texture itself: display coordinates are the faces' texture coordinates.
+ * False when the texture has no faces. Free the triangles with free(). */
+bool TieDcLayout_PlaceTexture(const opt_file_t* opt, const char* name, TieDcScreen* out);
 
 /* The DC source a TIE HUD instrument (or cockpit editor panel id) belongs to. */
 TieDcSource TieDcLayout_SourceOf(int instrument_id);

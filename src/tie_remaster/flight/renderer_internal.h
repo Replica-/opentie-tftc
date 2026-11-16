@@ -9,7 +9,7 @@
 #include "aeron/scene/mesh.h"
 #include "aeron/scene/present.h"
 #include "aeron/scene/scene3d.h"
-#include "tie_remaster/flight/cockpit/dc_layout.h"
+#include "tie_remaster/flight/cockpit/dc_effects.h"
 #include "tie_remaster/flight/motion_blur.h"
 #include "tie_remaster/flight/render_config.h"
 #include "tie_remaster/flight/render_math.h"
@@ -336,6 +336,9 @@ struct TieFlightRenderer {
 	/* TFTC DC screens of the loaded cockpit (cockpit/dc_layout.c). */
 	TieDcLayout cockpit3d_dc;
 	bool cockpit3d_dc_loaded;
+	/* Its effects .mat image sequences (cockpit/dc_effects.c), timed from the load. */
+	TieDcEffects cockpit3d_effects;
+	uint64_t cockpit3d_effects_start_us;
 	/* Inspector requests are acknowledged during flight and take effect at the
 	 * next mission generation, when simulation and rendering rebuild together.
 	 * `scene_reload_one_idx` uses 0xFFFF as its sentinel. */

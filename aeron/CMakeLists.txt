@@ -738,6 +738,21 @@ target_include_directories(lucas_opt PUBLIC
 )
 set_target_properties(lucas_opt PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
 
+# XWA DAT image containers (from upstream aeron's tools/xwau), with the LZMA
+# and block-compression decoders their 32-bit images use.
+add_library(aeron_xwau_dat STATIC
+    tools/xwau/xwau_dat.c
+    third_party/lzma/LzmaDec.c
+)
+target_include_directories(aeron_xwau_dat
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/xwau
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/lzma
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/bcdec
+)
+set_target_properties(aeron_xwau_dat PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
+
 add_library(opt2gltf_lib STATIC
     tools/opt2gltf/opt2gltf.c
 )

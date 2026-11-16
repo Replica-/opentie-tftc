@@ -3111,6 +3111,7 @@ static bool TieCockpitRenderer_DcGaugeSource(TieDcSource source) {
 		case TIE_DC_LASER_POWER:
 		case TIE_DC_SHIELD_POWER:
 		case TIE_DC_BEAM_POWER:
+		case TIE_DC_ENGINE_POWER:
 		case TIE_DC_THROTTLE:
 		case TIE_DC_SHIELD_FRONT_TEXT:
 		case TIE_DC_SHIELD_BACK_TEXT:
@@ -3728,33 +3729,80 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 	}
 	/* XWA's recharge screens: a solid bar of the system's energy, lasers
 	 * green, shields yellow, beam magenta (full rings on the TIE Avenger at
-	 * a mission's start), dark on a craft without the system. The bar fills
-	 * from the left or the bottom. */
+	 * a mission's start), dark on a craft without the system, filling from
+	 * the left or the bottom. The recharge setting the TIE power sliders
+	 * show (0..4, 2 normal) marks the bar like a dial: a bright tick at the
+	 * setting among faint ticks at the steps. The engine power screen shows
+	 * its setting alone. */
 	const uint16_t cap = snap->hud.working_subsystems;
+	const uint16_t sub = snap->hud.subsystem_active;
 	float fraction = 0.0f;
+	int level = -1;
 	if (source == TIE_DC_LASER_POWER && (cap & 0x200u)) {
 		for (int gr = 0; gr < snap->hud.weapon_group_cnt && gr < 8; ++gr) {
 			const TieHudInstrument* ins = &snap->hud.instruments[TIE_HUDI_LASER_LED_FIRST + gr];
 			if (TieCockpitCommon_InstrumentActive(ins) && ins->color != 0)
 				fraction = fmaxf(fraction, (float)(ins->value < 0 ? 0 : ins->value > 10 ? 10 : ins->value) / 10.0f);
 		}
-	} else if (source == TIE_DC_SHIELD_POWER && (cap & 0x800u)) {
+		level = snap->hud.laser_power;
+	} else if (source == TIE_DC_SHIELD_POWER && (cap & 0x800u) && (sub & 0x001u)) {
 		const int front = TieCockpitRenderer_DcShieldPercent(snap, true), rear = TieCockpitRenderer_DcShieldPercent(snap, false);
 		fraction = fminf((float)((front > 0 ? front : 0) + (rear > 0 ? rear : 0)) / 200.0f, 1.0f);
-	} else if (source == TIE_DC_BEAM_POWER && (cap & 0x1000u)) {
+		level = snap->hud.shield_power;
+	} else if (source == TIE_DC_BEAM_POWER && (cap & 0x1000u) && (sub & 0x100u)) {
 		const TieHudInstrument* ins = &snap->hud.instruments[TIE_HUDI_BEAM_ARC];
 		fraction = TieCockpitCommon_InstrumentActive(ins) && ins->value > 0 ? fminf((float)ins->value / 7.0f, 1.0f) : 0.0f;
+		level = snap->hud.beam_power;
+	} else if (source == TIE_DC_ENGINE_POWER) {
+		const TieHudInstrument* ins = &snap->hud.instruments[TIE_HUDI_POWER_BALANCE];
+		if (TieCockpitCommon_InstrumentActive(ins))
+			level = ins->value;
 	}
 	static const float k_laser[3] = { 0.1f, 0.9f, 0.2f }, k_shield[3] = { 0.95f, 0.85f, 0.1f },
-					   k_beam[3] = { 0.8f, 0.2f, 0.9f };
-	const float* colour = source == TIE_DC_LASER_POWER ? k_laser : source == TIE_DC_SHIELD_POWER ? k_shield : k_beam;
+					   k_beam[3] = { 0.8f, 0.2f, 0.9f }, k_engine[3] = { 0.3f, 0.6f, 1.0f };
+	const float* colour = source == TIE_DC_LASER_POWER	  ? k_laser
+						  : source == TIE_DC_SHIELD_POWER ? k_shield
+						  : source == TIE_DC_BEAM_POWER	  ? k_beam
+														  : k_engine;
+	const bool along_x = w >= h;
+	const float length = along_x ? w : h;
 	TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, w, h, 0.004f, 0.012f, 0.006f, 1.0f);
 	if (fraction > 0.0f) {
-		if (w >= h)
+		if (along_x)
 			TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, w * fraction, h, colour[0], colour[1], colour[2], 1.0f);
 		else
 			TieCockpitRenderer_DcFill(surface->list, 0.0f, h * (1.0f - fraction), w, h * fraction, colour[0], colour[1],
 									  colour[2], 1.0f);
+	}
+	if (level < 0)
+		return;
+	level = level > 4 ? 4 : level;
+	if (source == TIE_DC_ENGINE_POWER) {
+		/* The engine setting as a bar of its own: a quarter per step. */
+		const float lit = (float)level / 4.0f;
+		if (along_x)
+			TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, w * lit, h, colour[0], colour[1], colour[2], 1.0f);
+		else
+			TieCockpitRenderer_DcFill(surface->list, 0.0f, h * (1.0f - lit), w, h * lit, colour[0], colour[1], colour[2],
+									  1.0f);
+	}
+	const float tick = fmaxf(length * 0.012f, 1.5f), mark = fmaxf(length * 0.03f, 3.0f);
+	for (int step = 0; step <= 4; ++step) {
+		const bool at = step == level;
+		const float size = at ? mark : tick;
+		/* Step positions run from the bar's start to its end, the marks kept inside it. */
+		const float along = (float)step / 4.0f * (length - size);
+		const float x = along_x ? along : 0.0f, y = along_x ? 0.0f : length - along - size;
+		const float sw = along_x ? size : w, sh = along_x ? h : size;
+		if (at) {
+			TieCockpitRenderer_DcFill(surface->list, x, y, sw, sh, 0.0f, 0.0f, 0.0f, 1.0f);
+			const float inset = size * 0.25f;
+			TieCockpitRenderer_DcFill(surface->list, x + (along_x ? inset : 0.0f), y + (along_x ? 0.0f : inset),
+									  sw - (along_x ? 2.0f * inset : 0.0f), sh - (along_x ? 0.0f : 2.0f * inset), 0.9f,
+									  0.9f, 0.9f, 1.0f);
+		} else if (step > 0 && step < 4) {
+			TieCockpitRenderer_DcFill(surface->list, x, y, sw, sh, 0.0f, 0.0f, 0.0f, 0.55f);
+		}
 	}
 }
 

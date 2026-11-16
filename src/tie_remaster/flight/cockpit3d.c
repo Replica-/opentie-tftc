@@ -25,6 +25,11 @@
 /* Horizontal field of view without a .dc xwahacker_fov: the XWAU cockpits' usual one. */
 #define TIE_FLIGHT_COCKPIT3D_FOV_DEG 88.0f
 
+/* TFTC's cockpits sit in near darkness, and their self-lit texels (the radar
+ * backdrops' grids among them) glow without blooming. */
+#define TIE_FLIGHT_COCKPIT3D_BASE_COLOR 0.35f
+#define TIE_FLIGHT_COCKPIT3D_GLOW 0.5f
+
 static float s_cockpit3d_fov_deg = TIE_FLIGHT_COCKPIT3D_FOV_DEG;
 
 static void TieFlightCockpit3d_Transform(const float m[16], const float p[3], float w, float out[4]);
@@ -189,7 +194,7 @@ static bool TieFlightCockpit3d_BuildChunk(TieFlightRenderer* g, AeronCommandBuff
 	if (!Aeron_OptModelBuildMemory(bytes, size, path,
 								   &(AeronOptModelBuildOptions) {
 									   .smooth_angle_degrees = g->assets->smooth_angle_degrees,
-									   .emissive_strength = 1.0f,
+									   .emissive_strength = TIE_FLIGHT_COCKPIT3D_GLOW,
 									   .emissive = true,
 									   .material_overrides = materials->overrides,
 									   .material_override_count = materials->count,
@@ -199,6 +204,7 @@ static bool TieFlightCockpit3d_BuildChunk(TieFlightRenderer* g, AeronCommandBuff
 									   .mesh_count = count,
 									   .mesh_skip = hidden,
 									   .mesh_skip_count = (size_t)hidden_count,
+									   .base_color_scale = TIE_FLIGHT_COCKPIT3D_BASE_COLOR,
 								   },
 								   &built, &error))
 		return false;

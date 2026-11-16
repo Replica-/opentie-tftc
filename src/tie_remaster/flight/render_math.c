@@ -249,11 +249,13 @@ void TieRenderMath_BuildCameraAtOrigin(TieFlightCamera* out, const struct TieCam
 	 * across the full output. Independent axes preserve DOS yAspect. */
 	float tan_h = tanf(classic_h_half) * (float)rt_w / aperture_w;
 	float tan_v = tanf(classic_v_half) * (float)rt_h / aperture_h;
-	/* The 3D cockpit sets its own field of view from the craft; both axes
-	 * scale together so the aspect and reticle placement are kept. */
+	/* The 3D cockpit sets its own field of view from the craft, measured
+	 * across the screen diagonal as XWA's hacker FOV is; both axes scale
+	 * together so the aspect and reticle placement are kept. */
 	if (TiePresentation_Cockpit3d() && cam->target_obj_slot != 0xFFFF && !cam->zoom_active) {
 		const float fov_deg = TieFlightCockpit3d_FovDeg();
-		const float widen = tanf(fov_deg * 0.5f * 3.14159265f / 180.0f) / tan_h;
+		const float diagonal = tanf(fov_deg * 0.5f * 3.14159265f / 180.0f);
+		const float widen = diagonal / sqrtf(tan_h * tan_h + tan_v * tan_v);
 		if (widen > 0.0f) {
 			tan_h *= widen;
 			tan_v *= widen;

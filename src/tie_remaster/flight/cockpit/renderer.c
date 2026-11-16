@@ -3336,6 +3336,20 @@ static void TieCockpitRenderer_DrawDcGoals(TieCockpitRenderer* cg, AeronDrawList
 /* XWA's beam display: a striped blue sphere in a red ring. */
 static void TieCockpitRenderer_DrawDcBeamSphere(AeronDrawList2D* list, float w, float h) {
 	const float r = fminf(w, h) * 0.34f, cx = w * 0.5f, cy = h * 0.5f;
+	/* A dark disc under it hides what the cockpit paints on the screen (the
+	 * gunboat's reticle). */
+	const float disc = fminf(w, h) * 0.5f;
+	AeronDrawList2DRRect back = {
+		.dst_x = cx - disc,
+		.dst_y = cy - disc,
+		.dst_w = disc * 2.0f,
+		.dst_h = disc * 2.0f,
+		.radius_px = disc,
+		.soft_px = 1.5f,
+		.fill_top = { 0.004f, 0.004f, 0.006f, 1.0f },
+		.fill_bottom = { 0.004f, 0.004f, 0.006f, 1.0f },
+	};
+	AeronDrawList_AddRRect(list, &back);
 	AeronDrawList2DRRect ring = {
 		.dst_x = cx - r * 1.18f,
 		.dst_y = cy - r * 1.18f,
@@ -3344,7 +3358,7 @@ static void TieCockpitRenderer_DrawDcBeamSphere(AeronDrawList2D* list, float w, 
 		.radius_px = r * 1.18f,
 		.border_px = fmaxf(r * 0.12f, 1.5f),
 		.soft_px = 1.0f,
-		.border = { 0.55f * 0.9f, 0.08f * 0.9f, 0.12f * 0.9f, 0.9f },
+		.border = { 0.22f, 0.012f, 0.02f, 1.0f },
 	};
 	AeronDrawList_AddRRect(list, &ring);
 	enum { BANDS = 7 };
@@ -3689,8 +3703,12 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 		TieCockpitRenderer_DcFill(surface->list, w * 0.98f - tick, h * 0.15f, tick, h * 0.7f, 0.55f, 0.55f, 0.55f, 1.0f);
 		const int cannons = snap->hud.weapon_group_cnt < 1 ? 1 : snap->hud.weapon_group_cnt > 8 ? 8 : snap->hud.weapon_group_cnt;
 		const int side = cannons >= 2 ? (occurrence & 1) : 0, rows = (cannons + 1) / 2;
+		/* The gunboat's and missile boat's bars are small on screen: no glow,
+		 * and lines a little thicker so each stays a line. */
+		const char* model = cg->flight_gpu ? TieFlightRenderer_Cockpit3dModel(cg->flight_gpu) : NULL;
+		const bool glow = !model || strncmp(model, "Tie", 3) == 0;
 		const float left = w * 0.06f, step = (w * 0.76f) / 6.0f, pitch = h * 0.78f / (float)rows;
-		const float dash_h = fmaxf(pitch * (rows == 1 ? 0.16f : 0.17f), 1.5f);
+		const float dash_h = fmaxf(pitch * (glow ? (rows == 1 ? 0.16f : 0.17f) : 0.3f), 1.5f);
 		for (int row = 0; row < rows; ++row) {
 			const int slot = side + row * 2;
 			if (slot >= cannons)
@@ -3706,8 +3724,9 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 			const float cy = h * 0.11f + pitch * ((float)(rows - 1 - row) + 0.5f), y = cy - dash_h * 0.5f;
 			for (int i = 0; i < 6 && (float)i < lit; ++i) {
 				const float part = fminf(lit - (float)i, 1.0f), x = left + step * (float)i;
-				TieCockpitRenderer_DcFill(surface->list, x, y - dash_h, step * 0.9f * part, dash_h * 3.0f, r * 0.5f,
-										  g * 0.5f, b * 0.5f, 0.12f);
+				if (glow)
+					TieCockpitRenderer_DcFill(surface->list, x, y - dash_h, step * 0.9f * part, dash_h * 3.0f, r * 0.5f,
+											  g * 0.5f, b * 0.5f, 0.12f);
 				TieCockpitRenderer_DcFill(surface->list, x, y, step * 0.86f * part, dash_h, r, g, b, 1.0f);
 			}
 			const TieHudInstrument* lever = &snap->hud.instruments[TIE_HUDI_WEAPON_FIRE_FIRST + slot];
@@ -3771,9 +3790,38 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 		fraction = TieCockpitCommon_InstrumentActive(ins) && ins->value > 0 ? fminf((float)ins->value / 7.0f, 1.0f) : 0.0f;
 		level = snap->hud.beam_power;
 	} else if (source == TIE_DC_ENGINE_POWER) {
+		/* panel_updatepower: the engine's share, 0..12 rungs, 6 at the normal split. */
 		const TieHudInstrument* ins = &snap->hud.instruments[TIE_HUDI_POWER_BALANCE];
-		if (TieCockpitCommon_InstrumentActive(ins))
-			level = ins->value;
+		if (TieCockpitCommon_InstrumentActive(ins) && ins->value >= 0)
+			level = (ins->value + 1) / 3;
+	}
+	/* The gunboat's and missile boat's recharge screens are TFTC's
+	 * segmented setting gauges: a block per step of the setting, in the
+	 * craft's colours (the missile boat's beam red and its engine orange). */
+	const char* model = cg->flight_gpu ? TieFlightRenderer_Cockpit3dModel(cg->flight_gpu) : NULL;
+	if (model && strncmp(model, "Tie", 3) != 0) {
+		const bool missile_boat = strcmp(model, "MissileBoatCockpit") == 0;
+		static const float k_green[3] = { 0.1f, 0.9f, 0.2f }, k_yellow[3] = { 0.95f, 0.85f, 0.1f },
+						   k_magenta[3] = { 0.8f, 0.1f, 0.85f }, k_cyan[3] = { 0.15f, 0.75f, 1.0f },
+						   k_red[3] = { 1.0f, 0.12f, 0.08f }, k_orange[3] = { 1.0f, 0.5f, 0.05f };
+		const float* c = source == TIE_DC_LASER_POWER	 ? k_green
+						 : source == TIE_DC_SHIELD_POWER ? k_yellow
+						 : source == TIE_DC_BEAM_POWER	 ? (missile_boat ? k_red : k_magenta)
+														 : (missile_boat ? k_orange : k_cyan);
+		if (level < 0 && source == TIE_DC_BEAM_POWER)
+			level = snap->hud.beam_power; /* the setting, on a craft whose beam is off */
+		const int lit = level < 0 ? 0 : level > 4 ? 4 : level;
+		const bool along_x = w >= h;
+		const float length = along_x ? w : h, gap = length * 0.03f, cell = (length - 3.0f * gap) / 4.0f;
+		TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, w, h, 0.002f, 0.002f, 0.003f, 1.0f);
+		for (int i = 0; i < 4; ++i) {
+			const float at = (float)i * (cell + gap);
+			const float x = along_x ? at : 0.0f, y = along_x ? 0.0f : length - at - cell;
+			if (i < lit)
+				TieCockpitRenderer_DcFill(surface->list, x, y, along_x ? cell : w, along_x ? h : cell, c[0], c[1], c[2],
+										  1.0f);
+		}
+		return;
 	}
 	static const float k_laser[3] = { 0.1f, 0.9f, 0.2f }, k_shield[3] = { 0.95f, 0.85f, 0.1f },
 					   k_beam[3] = { 0.8f, 0.2f, 0.9f }, k_engine[3] = { 0.3f, 0.6f, 1.0f };
@@ -3996,7 +4044,7 @@ static void TieCockpitRenderer_BeginDcSurfaces(TieCockpitRenderer* cg, const Tie
 		const int occurrence = seen[dc_screen->source]++;
 		if (TieCockpitRenderer_DcGaugeSource(dc_screen->source)) {
 			const float aspect = dc_screen->aspect > 0.0f ? dc_screen->aspect : 1.0f;
-			const float base = dc_screen->source == TIE_DC_TARGETING								   ? 1024.0f
+			const float base = dc_screen->source == TIE_DC_TARGETING || dc_screen->source == TIE_DC_LASERS ? 1024.0f
 							   : dc_screen->source == TIE_DC_LEFT_TEXT || dc_screen->source == TIE_DC_RIGHT_TEXT ? 768.0f
 																												 : 256.0f;
 			const int w = aspect >= 1.0f ? (int)base : (int)fmaxf(base * aspect, 8.0f);

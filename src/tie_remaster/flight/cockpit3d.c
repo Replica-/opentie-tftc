@@ -299,6 +299,7 @@ typedef struct TieFlightCockpit3dHologramPlace {
 static const TieFlightCockpit3dHologramPlace k_hologram_places[] = {
 	{ "AssaultGunboatCockpit", { 0.02f, 0.71f, 0.245f, 0.975f }, { 0.757f, 0.71f, 0.975f, 0.975f } },
 	{ "MissileBoatCockpit", { 0.19f, 0.765f, 0.39f, 0.975f }, { 0.635f, 0.765f, 0.84f, 0.975f } },
+	{ "TieAvengerCockpit", { 0.018f, 0.648f, 0.24f, 0.975f }, { 0.763f, 0.648f, 0.988f, 0.975f } },
 };
 
 /* Pins each hologram text box of `model` to its place on screen. */

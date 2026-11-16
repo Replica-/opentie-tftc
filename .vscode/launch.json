@@ -76,6 +76,37 @@
       ]
     },
     {
+      "name": "OpenTIE (Debug, all missions unlocked)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
+      "args": [
+        "--unlock-all"
+      ],
+      "cwd": "${workspaceFolder}/build/Debug",
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+      "preLaunchTask": "Build OpenTIE (Debug)",
+      "setupCommands": [
+        {
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
       "name": "OpenTIE (Debug, TIE Fighter: battle 1 mission 1)",
       "type": "cppdbg",
       "request": "launch",

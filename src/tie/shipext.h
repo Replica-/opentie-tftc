@@ -360,6 +360,11 @@ void shipext_Get_Pilot_Name(char* out, size_t capacity);
 void shipext_Get_Pilot_Name(char* out);
 #endif
 bool shipext_Load_Pilot(const char* name);
+#ifdef TIE_MODERN
+/* PORT: --unlock-all. When set, shipext_Load_Pilot marks every tour battle
+ * complete, so the combat chamber lists all of its missions. */
+extern bool shipext_unlock_all;
+#endif
 int16_t shipext_Create_Pilot(const char* name);
 int16_t shipext_Revive_Pilot(char* name);
 void shipext_Update_Pilot(void);

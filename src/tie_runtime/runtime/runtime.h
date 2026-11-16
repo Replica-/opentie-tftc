@@ -21,6 +21,9 @@ typedef struct TieRuntimeConfig {
 	/* Comma-separated mission files ("B6M1AW,HA1W") flown in turn after
 	 * skip_pilot loads, without the screens between them (testing). */
 	const char* test_missions;
+	/* Developer shortcut: every pilot loaded has all tour battles completed,
+	 * so the combat chamber offers every tour mission. */
+	bool unlock_all;
 } TieRuntimeConfig;
 
 bool TieRuntime_Init(const TieRuntimeConfig* config, char* error, size_t error_capacity);

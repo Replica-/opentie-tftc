@@ -11,7 +11,7 @@ static int TieMain_Usage(const char* message, const char* argument) {
 		fprintf(stderr, "[tie-aeron] "), fprintf(stderr, message, argument), fputc('\n', stderr);
 	else if (message)
 		fprintf(stderr, "[tie-aeron] %s\n", message);
-	fprintf(stderr, "Usage: tie [--tie95-data <dir>] [--tie98-data <dir>] [--resource-root <dir>] [--skip-to-mission <pilot> [battle mission]] [--missions <file,file...>] [--headless] [--capture <file.png> [seconds]] [--press <keys>] [--music imuse|tie98|tftc]\n");
+	fprintf(stderr, "Usage: tie [--tie95-data <dir>] [--tie98-data <dir>] [--resource-root <dir>] [--skip-to-mission <pilot> [battle mission]] [--missions <file,file...>] [--headless] [--capture <file.png> [seconds]] [--press <keys>] [--music imuse|tie98|tftc] [--unlock-all]\n");
 	return 2;
 }
 
@@ -23,6 +23,11 @@ static int TieMain_ParseOptions(int argc, char* argv[], TieLaunchOptions* out) {
 		const char* argument = argv[index];
 		if (strcmp(argument, "--headless") == 0) {
 			out->headless = true;
+			continue;
+		}
+		if (strcmp(argument, "--unlock-all") == 0) {
+			/* --unlock-all: every pilot loaded this run has all tour battles completed. */
+			out->unlock_all = true;
 			continue;
 		}
 		if (strcmp(argument, "--music") == 0) {

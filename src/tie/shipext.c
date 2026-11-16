@@ -273,6 +273,10 @@ void shipext_Set_Pilot_Name(const char* name) {
 
 /* --- Pilot save/load --- */
 
+#ifdef TIE_MODERN
+bool shipext_unlock_all;
+#endif
+
 // FUNCTION: TIE95 0x80244
 bool shipext_Load_Pilot(const char* name) {
 	char path[40];
@@ -299,6 +303,16 @@ bool shipext_Load_Pilot(const char* name) {
 #endif
 	shipext_Set_Pilot_Name(name);
 	options_gbl.game_level = pilot_record.game_level;
+#ifdef TIE_MODERN
+	if (shipext_unlock_all) {
+		for (int16_t battle = 0; battle < NUM_BATTLES; battle++) {
+			if (ship_info[battle + NUM_SHIPS] == LANDRU_NULL_HANDLE)
+				continue;
+			pilot_record.battle_status[battle] = 3;
+			pilot_record.battle_cursor[battle] = (uint8_t)shipext_Get_Tour_Battle_Size(battle);
+		}
+	}
+#endif
 	return true;
 }
 

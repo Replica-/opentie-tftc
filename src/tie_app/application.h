@@ -17,6 +17,7 @@ typedef struct TieLaunchOptions {
 	int skip_mission;       /* 1-based mission in that battle */
 	const char* missions;   /* "B6M1AW,HA1W": fly these mission files in turn (testing) */
 	const char* music;      /* "imuse", "tie98" or "tftc": music source for this run only; NULL = config */
+	bool unlock_all;        /* pilots loaded this run have every tour battle completed (saved to the pilot) */
 } TieLaunchOptions;
 
 int TieApplication_Run(const TieLaunchOptions* launch);

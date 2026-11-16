@@ -178,6 +178,7 @@ bool TieRuntime_Init(const TieRuntimeConfig* config, char* error, size_t error_c
 	voiceenabled = 1;
 	g_playerEngineSoundUpdateEnabled = TieProfile_Flight()->player_engine_sound_enabled ? 1 : 0;
 	strcpy(resourcedir, "RESOURCE/");
+	shipext_unlock_all = config->unlock_all;
 
 	if (config->skip_to_mission) {
 		/* The shell loads the ship tables while opening, so the pilot's mission

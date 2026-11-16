@@ -363,6 +363,7 @@ int TieApplication_Run(const TieLaunchOptions* launch) {
 		.skip_battle = launch ? launch->skip_battle : 0,
 		.skip_mission = launch ? launch->skip_mission : 0,
 		.test_missions = launch ? launch->missions : NULL,
+		.unlock_all = launch && launch->unlock_all,
 		.frontend_profile = frontend_profile,
 		.flight_profile = launch_config.flight_profile,
 		.audio = {

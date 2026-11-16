@@ -29,6 +29,9 @@
  * backdrops' grids among them) glow without blooming. */
 #define TIE_FLIGHT_COCKPIT3D_BASE_COLOR 0.35f
 #define TIE_FLIGHT_COCKPIT3D_GLOW 0.5f
+/* The cockpit takes no shadows (its own hull would black it out), so the
+ * sun and sky reach it only weakly, as through the canopy frame. */
+#define TIE_FLIGHT_COCKPIT3D_WORLD_LIGHT 0.4f
 
 static float s_cockpit3d_fov_deg = TIE_FLIGHT_COCKPIT3D_FOV_DEG;
 
@@ -353,6 +356,7 @@ void TieFlightCockpit3d_Submit(TieFlightRenderer* g, const TieSnapshot* curr, co
 		memcpy(in.transform, transform, sizeof in.transform);
 		memcpy(in.prev_transform, transform, sizeof in.prev_transform);
 		in.zero_velocity = 1;
+		in.world_light_scale = TIE_FLIGHT_COCKPIT3D_WORLD_LIGHT;
 		/* The hidden exterior hull still casts shadows and would black out
 		 * the interior, and the cockpit must not shadow the world. */
 		in.shadow_flags = AERON_SCENE_INSTANCE_NO_CAST_SHADOW | AERON_SCENE_INSTANCE_NO_RECEIVE_SHADOW;

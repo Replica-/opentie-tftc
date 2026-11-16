@@ -1106,6 +1106,7 @@ static struct {
 	float after_seconds;
 	uint64_t flight_started_us;
 	bool done;
+	const char* captured; /* the --missions entry already captured */
 } g_capture;
 
 void TieRemaster_RequestCapture(const char* path, float after_seconds) {
@@ -1121,7 +1122,12 @@ static void TieRemaster_UpdateCapture(const TieSnapshot* snapshot) {
 	/* A --missions run captures each of its missions, timed from the frame
 	 * the mission's name first shows, to <path>-<mission>.png. */
 	const char* test_mission = TieRuntime_TestMission();
-	if (test_mission && strcmp(snapshot->mission_name, test_mission) != 0)
+	if (test_mission && (test_mission == g_capture.captured || strcmp(snapshot->mission_name, test_mission) != 0))
+		return;
+	/* Not during a hyperspace jump: it shows only streaks, and a mission that
+	 * opens with one cannot end until the jump is over (the arrival loop runs
+	 * world frames, which stop once the mission is ending). */
+	if (snapshot->hyperspace.phase)
 		return;
 	if (!g_capture.flight_started_us)
 		g_capture.flight_started_us = Aeron_NowUs();
@@ -1150,8 +1156,10 @@ static void TieRemaster_UpdateCapture(const TieSnapshot* snapshot) {
 	}
 	free(pixels);
 	if (test_mission && TieRuntime_TestMissionHasNext()) {
-		/* End this mission; the shell starts the next and the timer restarts. */
+		/* End this mission; the shell starts the next and the timer restarts.
+		 * Winding it down can outlast the timer, so it is not captured again. */
 		TieRuntime_EndTestMission();
+		g_capture.captured = test_mission;
 		g_capture.flight_started_us = 0;
 		g_capture.done = false;
 		return;

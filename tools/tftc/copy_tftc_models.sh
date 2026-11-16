@@ -110,7 +110,15 @@ while read -r tie source; do
         rm -f "$out/$tie.mat"
         echo "note: no $source.mat; $tie uses default materials" >&2
     fi
-    echo "$tie <- $(basename "$opt")${mat:+ + $(basename "$mat")}"
+    # The craft's .ini picks the meshes shown ([ObjectProfiles]): some OPTs
+    # hold two variants of the craft.
+    ini="$(find_ci "$models" "$source.ini")"
+    if [ -n "$ini" ]; then
+        cp "$ini" "$out/$tie.ini"
+    else
+        rm -f "$out/$tie.ini"
+    fi
+    echo "$tie <- $(basename "$opt")${mat:+ + $(basename "$mat")}${ini:+ + $(basename "$ini")}"
     copied=$((copied + 1))
 done <<< "$mapping"
 

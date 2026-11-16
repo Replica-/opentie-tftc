@@ -173,7 +173,17 @@ void TieFlightCockpit3d_Release(TieFlightRenderer* g) {
 
 static bool TieFlightCockpit3d_BuildChunk(TieFlightRenderer* g, AeronCommandBuffer* cmd, const uint8_t* bytes,
 										  size_t size, const char* path, const TieFlightTftcMaterialSet* materials,
-										  int first, int count) {
+										  const int* hidden, int hidden_count, int first, int count) {
+	/* A run of meshes the object profile hides entirely has nothing to build. */
+	int shown = count;
+	for (int i = first; i < first + count; ++i)
+		for (int h = 0; h < hidden_count; ++h)
+			if (hidden[h] == i) {
+				--shown;
+				break;
+			}
+	if (shown <= 0)
+		return true;
 	AeronFlightModel built = { 0 };
 	AeronOptModelError error = { 0 };
 	if (!Aeron_OptModelBuildMemory(bytes, size, path,
@@ -187,6 +197,8 @@ static bool TieFlightCockpit3d_BuildChunk(TieFlightRenderer* g, AeronCommandBuff
 									   .max_atlas_size = 8192,
 									   .mesh_first = first,
 									   .mesh_count = count,
+									   .mesh_skip = hidden,
+									   .mesh_skip_count = (size_t)hidden_count,
 								   },
 								   &built, &error))
 		return false;
@@ -223,6 +235,26 @@ static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cm
 	}
 	const int total = opt->mesh_count;
 
+	/* The craft's object profile, from <Name>.ini, hides cockpit meshes too:
+	 * they are left out of the model and their displays. */
+	char ini_path[96];
+	snprintf(ini_path, sizeof ini_path, "cockpit3d/%s.ini", model);
+	int hidden[TIE_FLIGHT_TFTC_MAX_HIDDEN];
+	const int hidden_count = TieFlightTftc_HiddenMeshes(g->assets->vfs, ini_path, hidden, TIE_FLIGHT_TFTC_MAX_HIDDEN);
+	opt_file_t shown = *opt;
+	opt_mesh_t* shown_meshes = hidden_count ? malloc((size_t)(total > 0 ? total : 1) * sizeof *shown_meshes) : NULL;
+	if (shown_meshes) {
+		shown.meshes = shown_meshes;
+		shown.mesh_count = 0;
+		for (int m = 0; m < total; ++m) {
+			bool skip = false;
+			for (int h = 0; h < hidden_count && !skip; ++h)
+				skip = hidden[h] == m;
+			if (!skip)
+				shown_meshes[shown.mesh_count++] = opt->meshes[m];
+		}
+	}
+
 	/* Where the cockpit shows each HUD display, from DynamicCockpit/<Name>.dc. */
 	char dc_path[96];
 	snprintf(dc_path, sizeof dc_path, "cockpit3d/%s.dc", model);
@@ -233,7 +265,7 @@ static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cm
 		if (dc_text) {
 			memcpy(dc_text, dc_bytes, dc_size);
 			dc_text[dc_size] = '\0';
-			g->cockpit3d_dc_loaded = TieDcLayout_Build(dc_text, opt, &g->cockpit3d_dc);
+			g->cockpit3d_dc_loaded = TieDcLayout_Build(dc_text, &shown, &g->cockpit3d_dc);
 			free(dc_text);
 		}
 		free(dc_bytes);
@@ -246,6 +278,7 @@ static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cm
 																				   : TIE_FLIGHT_COCKPIT3D_FOV_DEG;
 	TieFlightCockpit3d_LoadEye(g, model);
 	TieFlightCockpit3d_CheckEye(g, model);
+	free(shown_meshes);
 	opt_free(opt);
 
 	/* The cockpit's XWA effects materials, from <Name>.mat beside it. */
@@ -260,7 +293,9 @@ static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cm
 	int first = 0;
 	while (first < total && g->cockpit3d_mesh_count < TIE_FLIGHT_COCKPIT3D_MAX_CHUNKS) {
 		int count = total - first;
-		while (!TieFlightCockpit3d_BuildChunk(g, cmd, bytes, size, path, &materials, first, count) && count > 1)
+		while (!TieFlightCockpit3d_BuildChunk(g, cmd, bytes, size, path, &materials, hidden, hidden_count, first,
+											  count) &&
+			   count > 1)
 			count = (count + 1) / 2;
 		if (count == 1 && g->cockpit3d_mesh_count == 0)
 			Aeron_LogWarn("tie.cockpit3d", "%s: mesh %d could not be built", path, first);

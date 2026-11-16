@@ -200,6 +200,71 @@ void TieFlightTftc_FreeMaterials(TieFlightTftcMaterialSet* set) {
 	memset(set, 0, sizeof *set);
 }
 
+int TieFlightTftc_HiddenMeshes(AeronVfs* vfs, const char* ini_path, int* out, int capacity) {
+	uint8_t* bytes = NULL;
+	size_t size = 0;
+	if (!AeronVfs_ReadAll(vfs, AERON_VFS_ROOT_RESOURCE, ini_path, 1024u * 1024u, &bytes, &size))
+		return 0;
+	char* text = malloc(size + 1);
+	if (!text) {
+		free(bytes);
+		return 0;
+	}
+	memcpy(text, bytes, size);
+	text[size] = '\0';
+	free(bytes);
+	/* Two passes over the section: the default's name, then its line. */
+	char profile[64] = "Default";
+	int count = 0;
+	for (int pass = 0; pass < 2; ++pass) {
+		bool in_section = false;
+		for (char* line = text; line && *line;) {
+			char* next = strchr(line, '\n');
+			if (next)
+				*next = '\0';
+			char copy[512];
+			snprintf(copy, sizeof copy, "%s", line);
+			if (next)
+				*next = '\n';
+			line = next ? next + 1 : NULL;
+			char* comment = strchr(copy, ';');
+			if (comment)
+				*comment = '\0';
+			char* trimmed = TieFlightTftcShips_Trim(copy);
+			if (trimmed[0] == '[') {
+				in_section = TieFlightTftcShips_NameEqual(trimmed, "[ObjectProfiles]");
+				continue;
+			}
+			char* equals = strchr(trimmed, '=');
+			if (!in_section || !equals)
+				continue;
+			*equals = '\0';
+			const char* key = TieFlightTftcShips_Trim(trimmed);
+			char* value = TieFlightTftcShips_Trim(equals + 1);
+			if (pass == 0) {
+				if (TieFlightTftcShips_NameEqual(key, "Default") && value[0])
+					snprintf(profile, sizeof profile, "%s", value);
+				continue;
+			}
+			if (!TieFlightTftcShips_NameEqual(key, profile))
+				continue;
+			for (char* cursor = value; *cursor && count < capacity;) {
+				char* end = NULL;
+				const long index = strtol(cursor, &end, 10);
+				if (end == cursor) {
+					++cursor;
+					continue;
+				}
+				if (index >= 0)
+					out[count++] = (int)index;
+				cursor = end;
+			}
+		}
+	}
+	free(text);
+	return count;
+}
+
 AeronSceneMesh* TieFlightTftcShips_Load(TieFlightRenderer* g, AeronCommandBuffer* cmd, uint16_t species_idx) {
 	char name[64];
 	if (!TieFlightTftcShips_ModelName(g->assets, species_idx, name, sizeof name))
@@ -219,6 +284,10 @@ AeronSceneMesh* TieFlightTftcShips_Load(TieFlightRenderer* g, AeronCommandBuffer
 	snprintf(mat_path, sizeof mat_path, "tftc/%s.mat", name);
 	TieFlightTftcMaterialSet materials;
 	const bool have_materials = TieFlightTftc_LoadMaterials(g->assets->vfs, mat_path, &materials);
+	char ini_path[96];
+	snprintf(ini_path, sizeof ini_path, "tftc/%s.ini", name);
+	int hidden[TIE_FLIGHT_TFTC_MAX_HIDDEN];
+	const int hidden_count = TieFlightTftc_HiddenMeshes(g->assets->vfs, ini_path, hidden, TIE_FLIGHT_TFTC_MAX_HIDDEN);
 
 	AeronFlightModel built = { 0 };
 	AeronOptModelError error = { 0 };
@@ -232,6 +301,8 @@ AeronSceneMesh* TieFlightTftcShips_Load(TieFlightRenderer* g, AeronCommandBuffer
 													 .material_override_count = materials.count,
 													 /* TFTC ships carry far more texture than TIE98's. */
 													 .max_atlas_size = 8192,
+													 .mesh_skip = hidden,
+													 .mesh_skip_count = (size_t)hidden_count,
 												 },
 												 &built, &error);
 	TieFlightTftc_FreeMaterials(&materials);

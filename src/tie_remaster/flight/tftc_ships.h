@@ -25,6 +25,16 @@ typedef struct TieFlightTftcMaterialSet {
 bool TieFlightTftc_LoadMaterials(AeronVfs* vfs, const char* mat_path, TieFlightTftcMaterialSet* out);
 void TieFlightTftc_FreeMaterials(TieFlightTftcMaterialSet* set);
 
+#define TIE_FLIGHT_TFTC_MAX_HIDDEN 64
+
+/* The meshes the craft's default object profile hides. Its .ini names the
+ * profile under [ObjectProfiles] ("Default = TA-Mk2") and lists each
+ * profile's hidden mesh indices ("TA-Mk2 = 13, 15, 23, 25"). The same list
+ * applies to the craft's OPT and its cockpit OPT: TFTC's TieAvenger holds
+ * both marks of the craft in each, and drawing every mesh shows the two at
+ * once. Returns the number of indices written to `out`. */
+int TieFlightTftc_HiddenMeshes(AeronVfs* vfs, const char* ini_path, int* out, int capacity);
+
 /* Builds the TFTC replacement for a species' render mesh from
  * resources/tftc/<NAME>.opt and its optional <NAME>.mat, where NAME is the
  * basename of the species' TIE98 OPT (TIEFTR for IVFILES/TIEFTR.OPT). NULL

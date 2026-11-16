@@ -63,6 +63,244 @@
       ]
     },
     {
+      "name": "OpenTIE (Debug, TIE Fighter: battle 1 mission 1)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
+      "args": [
+        "--skip-to-mission",
+        "REPLICA",
+        "1",
+        "1"
+      ],
+      "cwd": "${workspaceFolder}/build/Debug",
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+      "preLaunchTask": "Build OpenTIE (Debug)",
+      "setupCommands": [
+        {
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "OpenTIE (Debug, TIE Interceptor: battle 1 mission 4)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
+      "args": [
+        "--skip-to-mission",
+        "REPLICA",
+        "1",
+        "4"
+      ],
+      "cwd": "${workspaceFolder}/build/Debug",
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+      "preLaunchTask": "Build OpenTIE (Debug)",
+      "setupCommands": [
+        {
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "OpenTIE (Debug, Assault Gunboat: battle 1 mission 5)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
+      "args": [
+        "--skip-to-mission",
+        "REPLICA",
+        "1",
+        "5"
+      ],
+      "cwd": "${workspaceFolder}/build/Debug",
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+      "preLaunchTask": "Build OpenTIE (Debug)",
+      "setupCommands": [
+        {
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "OpenTIE (Debug, TIE Bomber: battle 3 mission 1)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
+      "args": [
+        "--skip-to-mission",
+        "REPLICA",
+        "3",
+        "1"
+      ],
+      "cwd": "${workspaceFolder}/build/Debug",
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+      "preLaunchTask": "Build OpenTIE (Debug)",
+      "setupCommands": [
+        {
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "OpenTIE (Debug, TIE Advanced: battle 6 mission 1)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
+      "args": [
+        "--skip-to-mission",
+        "REPLICA",
+        "6",
+        "1"
+      ],
+      "cwd": "${workspaceFolder}/build/Debug",
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+      "preLaunchTask": "Build OpenTIE (Debug)",
+      "setupCommands": [
+        {
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "OpenTIE (Debug, TIE Defender: battle 8 mission 1)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
+      "args": [
+        "--skip-to-mission",
+        "REPLICA",
+        "8",
+        "1"
+      ],
+      "cwd": "${workspaceFolder}/build/Debug",
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+      "preLaunchTask": "Build OpenTIE (Debug)",
+      "setupCommands": [
+        {
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "OpenTIE (Debug, Missile Boat: battle 11 mission 1)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
+      "args": [
+        "--skip-to-mission",
+        "REPLICA",
+        "11",
+        "1"
+      ],
+      "cwd": "${workspaceFolder}/build/Debug",
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+      "preLaunchTask": "Build OpenTIE (Debug)",
+      "setupCommands": [
+        {
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
       "name": "OpenTIE (Debug, headless, skip to mission 1)",
       "type": "cppdbg",
       "request": "launch",

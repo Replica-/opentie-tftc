@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /* TFTC's digital soundtrack. TIE's own adaptive music logic picks the state;
- * each state plays its FLAC recording from resources/tftc/music/, entered
+ * each state plays TFTC's IMC state music from resources/tftc/music/, entered
  * through the recorded bridge (resources/tftc/signals/) that TIE's MIDI
  * script plays between those states. TIE's music sequences play their
  * recorded stings from resources/tftc/signals/ over the state music. */
@@ -27,7 +27,7 @@ void TieTftcMusic_Stop(void);
 /* `volume` 0..16, TIE's in-flight music volume. */
 void TieTftcMusic_SetVolume(int volume);
 void TieTftcMusic_Update(void);
-/* The FLAC file of the current state, or NULL when none plays. */
+/* The IMC file of the current state, or NULL when none plays. */
 const char* TieTftcMusic_CurrentTune(void);
 
 /* Front end music: plays `file`, relative to resources/tftc/, looping a room's,

@@ -5,6 +5,7 @@
 #include "aeron/log.h"
 #include "aeron/time.h"
 #include "tie_runtime/audio/imuse_session.h"
+#include "tie_runtime/audio/tftc_imc.h"
 #include "tie_runtime/storage/storage.h"
 
 #include <math.h>
@@ -14,10 +15,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* TIE's in-flight states (tie_updatemusic, fscript.c sdpArrays) and the
- * recordings of them in resources/tftc/music/. The MIDI segment names
- * abbreviate the track titles: tro, wait, reb, pol, intr, chal, conf, panic,
- * clim, fail, succ. */
+/* TIE's in-flight states (tie_updatemusic, fscript.c sdpArrays) and TFTC's
+ * IMC state music for them in resources/tftc/music/ (its Reb and Fam files
+ * are the same). The MIDI segment names abbreviate the track titles: tro
+ * (Introduction), wait, reb (Rebels: StRival), pol (Polar Plotting:
+ * StEmpire), intr (Intrusion: StPirate), chal, conf, panic, clim, fail,
+ * succ. */
 enum {
 	TFTC_TRACK_INTRO = 1,
 	TFTC_TRACK_WAITING = 2,
@@ -28,17 +31,8 @@ enum {
 
 static const char* const s_tracks[TFTC_TRACK_COUNT] = {
 	NULL,
-	"01. Inflight - Introduction.flac",
-	"05. Inflight - Wait.flac",
-	"04. Inflight - Rebels.flac",
-	"02. Inflight - Polar Plotting.flac",
-	"08. Inflight - Intrusion.flac",
-	"06. Inflight - Challenge.flac",
-	"03. Inflight - Confidence.flac",
-	"09. Inflight - Panic.flac",
-	"10. Inflight - Climax.flac",
-	"07. Inflight - Fail.flac",
-	"11. Inflight - Success.flac",
+	"STINTROREB.IMC", "STWAITREB.IMC", "STRIVAL.IMC",	"STEMPIRE.IMC",	 "STPIRATE.IMC", "STCHALREB.IMC",
+	"STCONFREB.IMC",  "STPANICREB.IMC", "STCLIMREB.IMC", "STFAILREB.IMC", "STSUCCREB.IMC",
 };
 
 /* The recordings in resources/tftc/signals/ of the bridges the MIDI script
@@ -148,8 +142,14 @@ static const char* const s_signals[] = {
 /* A file nothing follows, like a sting, fades its tail out over this. */
 #define TFTC_END_FADE_MS 500
 
-/* A queued PCM stream fed from a FLAC file: a state's track, possibly behind
- * the bridge into it, or a sting. */
+/* A file being played: an IMC state track, or a FLAC recording. */
+typedef struct TieTftcSource {
+	TieTftcImc* imc;
+	AeronAudioDecoder* decoder;
+} TieTftcSource;
+
+/* A queued PCM stream fed from a music file: a state's track, possibly
+ * behind the bridge into it, or a sting. */
 typedef struct TieTftcVoice {
 	int track; /* 0 outside flight state music */
 	bool bridge; /* the decoder is on the bridge into `track` */
@@ -159,7 +159,7 @@ typedef struct TieTftcVoice {
 	const char* next_dir;
 	uint64_t file_frames;		/* frames decoded from it */
 	int file_peak;				/* its loudest sample so far */
-	AeronAudioDecoder* decoder; /* NULL once the stream only drains */
+	TieTftcSource* decoder; /* NULL once the stream only drains */
 	AeronAudioStream stream;
 	int rate;
 	bool at_start; /* skipping the quiet start of the file */
@@ -193,26 +193,58 @@ static TieTftcVoice s_room_fading; /* the room music it replaced, fading out */
 static const char* s_room_file;
 static bool s_room_requested; /* the new screen asked for its music */
 
-static AeronAudioDecoder* TieTftcMusic_Open(const char* dir, const char* file, int* rate) {
+static void TieTftcSource_Close(TieTftcSource* source) {
+	if (!source)
+		return;
+	if (source->imc)
+		TieTftcImc_Close(source->imc);
+	if (source->decoder)
+		Aeron_AudioDecoderClose(source->decoder);
+	free(source);
+}
+
+static size_t TieTftcSource_Read(TieTftcSource* source, int16_t* pcm, size_t max_frames) {
+	return source->imc ? TieTftcImc_Read(source->imc, pcm, max_frames)
+					   : Aeron_AudioDecoderRead(source->decoder, pcm, max_frames);
+}
+
+static bool TieTftcSource_Rewind(TieTftcSource* source) {
+	if (source->imc) {
+		TieTftcImc_Rewind(source->imc);
+		return true;
+	}
+	return Aeron_AudioDecoderSeekUs(source->decoder, 0);
+}
+
+/* An .IMC file decodes with TFTC's own codec, anything else with Aeron's. */
+static TieTftcSource* TieTftcMusic_Open(const char* dir, const char* file, int* rate) {
 	char path[96];
 	snprintf(path, sizeof path, "%s%s", dir, file);
-	AeronAudioDecoder* decoder =
-		Aeron_AudioDecoderOpenFile((AeronFile*)TieStorage_Open(TIE_FILE_ROOT_RESOURCE, path, "rb"), path);
-	AeronAudioDecoderInfo info;
-	Aeron_AudioDecoderGetInfo(decoder, &info);
-	if (!decoder || info.sample_rate <= 0) {
+	TieTftcSource* source = calloc(1, sizeof *source);
+	if (!source)
+		return NULL;
+	const size_t length = strlen(file);
+	if (length > 4 && strcmp(file + length - 4, ".IMC") == 0) {
+		source->imc = TieTftcImc_Open(path);
+		*rate = TIE_TFTC_IMC_RATE;
+	} else {
+		source->decoder =
+			Aeron_AudioDecoderOpenFile((AeronFile*)TieStorage_Open(TIE_FILE_ROOT_RESOURCE, path, "rb"), path);
+		AeronAudioDecoderInfo info;
+		Aeron_AudioDecoderGetInfo(source->decoder, &info);
+		*rate = source->decoder ? info.sample_rate : 0;
+	}
+	if ((!source->imc && !source->decoder) || *rate <= 0) {
 		Aeron_LogWarn("tie.music", "TFTC music: cannot play resources/%s", path);
-		if (decoder)
-			Aeron_AudioDecoderClose(decoder);
+		TieTftcSource_Close(source);
 		return NULL;
 	}
-	*rate = info.sample_rate;
-	return decoder;
+	return source;
 }
 
 static void TieTftcVoice_Close(TieTftcVoice* v) {
 	if (v->decoder)
-		Aeron_AudioDecoderClose(v->decoder);
+		TieTftcSource_Close(v->decoder);
 	if (v->stream) {
 		Aeron_AudioStreamPause(v->stream);
 		Aeron_AudioStreamClose(v->stream);
@@ -224,7 +256,7 @@ static void TieTftcVoice_Close(TieTftcVoice* v) {
 
 /* Starts `v` on `decoder` with a stream of its own, with room for the held
  * frames on top of TFTC_BUFFER_SECONDS. */
-static bool TieTftcVoice_Start(TieTftcVoice* v, AeronAudioDecoder* decoder, int rate, const char* file) {
+static bool TieTftcVoice_Start(TieTftcVoice* v, TieTftcSource* decoder, int rate, const char* file) {
 	const size_t held_capacity = (size_t)rate * TFTC_HELD_SECONDS;
 	int16_t* held = malloc(held_capacity * 2 * sizeof *held);
 	int16_t* mix = malloc(held_capacity * 2 * sizeof *mix);
@@ -237,7 +269,7 @@ static bool TieTftcVoice_Start(TieTftcVoice* v, AeronAudioDecoder* decoder, int 
 		Aeron_LogWarn("tie.music", "TFTC music: could not open a PCM stream");
 		free(held);
 		free(mix);
-		Aeron_AudioDecoderClose(decoder);
+		TieTftcSource_Close(decoder);
 		return false;
 	}
 	v->mix = mix;
@@ -271,12 +303,12 @@ static bool TieTftcVoice_Continue(TieTftcVoice* v) {
 	v->file_frames = 0;
 	v->file_peak = 0;
 	if (!v->next)
-		return v->loop && Aeron_AudioDecoderSeekUs(v->decoder, 0);
+		return v->loop && TieTftcSource_Rewind(v->decoder);
 	int rate;
-	AeronAudioDecoder* decoder = TieTftcMusic_Open(v->next_dir, v->next, &rate);
+	TieTftcSource* decoder = TieTftcMusic_Open(v->next_dir, v->next, &rate);
 	if (decoder && rate != v->rate) {
 		Aeron_LogWarn("tie.music", "TFTC music: %s is not at %d Hz", v->next, v->rate);
-		Aeron_AudioDecoderClose(decoder);
+		TieTftcSource_Close(decoder);
 		decoder = NULL;
 	}
 	v->bridge = false;
@@ -284,7 +316,7 @@ static bool TieTftcVoice_Continue(TieTftcVoice* v) {
 		v->next = NULL;
 		return false;
 	}
-	Aeron_AudioDecoderClose(v->decoder);
+	TieTftcSource_Close(v->decoder);
 	v->decoder = decoder;
 	v->file = v->next;
 	v->next = NULL;
@@ -333,7 +365,7 @@ static bool TieTftcVoice_Fill(TieTftcVoice* v) {
 	const size_t target = (size_t)v->rate * TFTC_BUFFER_SECONDS;
 	while (v->decoder && Aeron_AudioStreamQueuedFrames(v->stream) < target &&
 		   Aeron_AudioStreamWritableFrames(v->stream) >= v->held_frames + TFTC_DECODE_FRAMES) {
-		const size_t decoded = Aeron_AudioDecoderRead(v->decoder, pcm, TFTC_DECODE_FRAMES);
+		const size_t decoded = TieTftcSource_Read(v->decoder, pcm, TFTC_DECODE_FRAMES);
 		if (!decoded) {
 			const bool silent_file = v->at_start;
 			const char* ended = v->file;
@@ -359,7 +391,7 @@ static bool TieTftcVoice_Fill(TieTftcVoice* v) {
 					v->held[2 * i + 1] = (int16_t)(v->held[2 * i + 1] * gain);
 				}
 				TieTftcVoice_Write(v, v->held, frames);
-				Aeron_AudioDecoderClose(v->decoder);
+				TieTftcSource_Close(v->decoder);
 				v->decoder = NULL;
 				Aeron_LogInfo("tie.music", "TFTC music: %s ends at %.2f s, %.2f s of its %.2f s tail fades out",
 							  ended, end_s, (double)frames / v->rate, tail_s);
@@ -450,7 +482,7 @@ static void TieTftcMusic_Switch(int track) {
 	 * retried every frame. */
 	s_voice.track = track;
 	int rate;
-	AeronAudioDecoder* decoder =
+	TieTftcSource* decoder =
 		signal != TFTC_SIGNAL_NONE ? TieTftcMusic_Open(TFTC_SIGNALS_DIR, s_signals[signal], &rate) : NULL;
 	const bool bridge = decoder != NULL;
 	if (!decoder)
@@ -521,7 +553,7 @@ static int TieTftcMusic_StingFor(int tie_sequence) {
 static void TieTftcMusic_StartSting(int signal) {
 	TieTftcVoice_Close(&s_sting);
 	int rate;
-	AeronAudioDecoder* decoder = TieTftcMusic_Open(TFTC_SIGNALS_DIR, s_signals[signal], &rate);
+	TieTftcSource* decoder = TieTftcMusic_Open(TFTC_SIGNALS_DIR, s_signals[signal], &rate);
 	if (!decoder || !TieTftcVoice_Start(&s_sting, decoder, rate, s_signals[signal]))
 		return;
 	s_sting.fade_from = 1.0f;
@@ -620,7 +652,7 @@ void TieTftcMusic_PlayRoom(const char* file, bool loop) {
 	if (!file)
 		return;
 	int rate;
-	AeronAudioDecoder* decoder = TieTftcMusic_Open(TFTC_FRONTEND_DIR, file, &rate);
+	TieTftcSource* decoder = TieTftcMusic_Open(TFTC_FRONTEND_DIR, file, &rate);
 	if (!decoder || !TieTftcVoice_Start(&s_room, decoder, rate, file))
 		return;
 	s_room.loop = loop;

@@ -57,17 +57,21 @@ SoundFont.
 The original prerecorded TIE98 music remains available when the complete 1998
 experience is preferred.
 
-The **TFTC** music source plays the digital soundtrack of TIE Fighter Total Conversion, as FLAC recordings in
-`resources/tftc/`. In flight, TIE's own adaptive music logic picks the state, and each of its 11 states plays its
-recording, `NN. Inflight - <Name>.flac` in `music/` (Introduction, Wait, Rebels, Polar Plotting, Intrusion,
-Challenge, Confidence, Panic, Climax, Fail, Success). Moving between states plays the recorded bridge the MIDI
+The **TFTC** music source plays the digital soundtrack of TIE Fighter Total Conversion from `resources/tftc/`. In
+flight, TIE's own adaptive music logic picks the state, and each of its 11 states plays TFTC's own IMC state music
+from `music/`, copied from TFTC's `Music` folder by `tools/tftc/copy_tftc_models.sh` (Introduction `STINTROREB`,
+Wait `STWAITREB`, Rebels `STRIVAL`, Polar Plotting `STEMPIRE`, Intrusion `STPIRATE`, Challenge `STCHALREB`,
+Confidence `STCONFREB`, Panic `STPANICREB`, Climax `STCLIMREB`, Fail `STFAILREB`, Success `STSUCCREB`), decoded
+start to end and looped. Moving between states plays the recorded bridge the MIDI
 script would play there, and every music sequence (kills, losses, goals, arrivals, eject, hyperspace) plays its
 recorded sting over the music, all from `signals/`. In the front end, TIE's menu music script picks the piece and
-its recording plays from `rooms/` (Register, Main Concourse, Tech Room, Bridge) or `songs/`. Silence at the start
+TFTC's own front end IMC plays where it has one (Main Concourse `FRCONCOURSE`, Tech Room `FRTECHROOM`, Secret
+Order `FRFAMROOM`, Launch `FRHANGAR`, Combat Chamber `FRSIMULATOR`, Combat Briefing `FRREADYROOM`, Mission Failure
+`FRLOSEREB`), and otherwise its recording plays from `rooms/` (Register, Bridge) or `songs/`. Silence at the start
 and end of each recording is trimmed as it plays.
 
-The recordings come from [this soundtrack](https://drive.google.com/drive/folders/12mgIewG2_mqL5EVr1gLzrLE4mhYJKePp).
-Download it and place its files in the matching `resources/tftc/` folders (`music/`, `signals/`, `rooms/`, `songs/`),
+The bridges, stings and front end music are FLAC recordings from [this soundtrack](https://drive.google.com/drive/folders/12mgIewG2_mqL5EVr1gLzrLE4mhYJKePp).
+Download it and place its files in the matching `resources/tftc/` folders (`signals/`, `rooms/`, `songs/`),
 keeping their file names.
 
 ## Graphics
@@ -149,7 +153,8 @@ OpenTIE can draw TFTC's ship models in place of the original ones. Copy them fro
 `TIEFTR.opt`), then rebuild so they are staged next to `OpenTIE.exe`. The `.mat` files set each texture's
 metallic, glossiness and shadeless values. A model's engine glows are drawn as X-Wing Alliance draws them,
 growing with the craft's throttle (the TFTC TIE fighter model has none). Only the drawn model changes: collision, hardpoints and debris keep
-the original, and a TFTC model is drawn whole, without destroyed parts hidden or turrets turning. A model that
+the original, and a TFTC model is drawn whole, without destroyed parts hidden. Its turrets turn with the original
+model's: each follows the original turret nearest it, so several may share one turret's aim. A model that
 cannot be built logs a warning and the original is drawn. Delete `resources/tftc/` to go back to the originals.
 
 ### TFTC skyboxes

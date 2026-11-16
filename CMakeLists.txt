@@ -519,6 +519,8 @@ set(TIE_RUNTIME_SOURCES
     src/tie_runtime/audio/output.h
     src/tie_runtime/audio/direct_sound.c
     src/tie_runtime/audio/direct_sound.h
+    src/tie_runtime/audio/tftc_imc.c
+    src/tie_runtime/audio/tftc_imc.h
     src/tie_runtime/audio/tftc_music.c
     src/tie_runtime/audio/tftc_music.h
     src/tie_runtime/hooks/axis_input.c

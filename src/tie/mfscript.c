@@ -477,7 +477,9 @@ static void mfscript_ChgJumpOnBeat(intptr_t sound1, intptr_t sound2, int16_t end
 								   int16_t jumpHook2);
 
 #ifdef TIE_MODERN
-/* TFTC's recordings of the menu music, by soundNames index. A recording
+/* TFTC's recordings of the menu music, by soundNames index: its own FR*.IMC
+ * front end pieces where it has one (FRWIN matches no piece here), the
+ * FLAC soundtrack for the rest. A recording
  * plays from its start; the script's cue changes within one piece have no
  * counterpart in it, and a file already playing carries on. Pieces without
  * a recording (drone, perelogo, awe, evilmonk, the cutscene pieces) are
@@ -491,19 +493,19 @@ static const char* mfscript_TftcFile(int nameIndex) {
 		case 5:
 			return "songs/02. Main Theme and Introduction.flac";
 		case 6: /* stately */
-			return "rooms/03. Tech Room.flac";
+			return "music/FRTECHROOM.IMC";
 		case 7:
 			return "rooms/04. Bridge.flac";
 		case 8: /* briefmap */
 			return "songs/09. Battle Briefing.flac";
 		case 9:
-			return "songs/08. Secret Order.flac";
+			return "music/FRFAMROOM.IMC";
 		case 10:
-			return "songs/10. Launch.flac";
+			return "music/FRHANGAR.IMC";
 		case 12:
 			return "rooms/01. Register.flac";
 		case 13: /* mainmen */
-			return "rooms/02. Main Concourse.flac";
+			return "music/FRCONCOURSE.IMC";
 		case 14:
 			return "songs/17. Reporting to the Emperor.flac";
 		case 15: /* phew: the pod and debriefing rooms */
@@ -511,9 +513,9 @@ static const char* mfscript_TftcFile(int nameIndex) {
 		case 16:
 			return "songs/05. Training Simulator.flac";
 		case 17:
-			return "songs/06. Combat Chamber.flac";
+			return "music/FRSIMULATOR.IMC";
 		case 19: /* fightmap */
-			return "songs/07. Combat Briefing.flac";
+			return "music/FRREADYROOM.IMC";
 		case 20:
 			return "songs/14. Medals.flac";
 		case 26: /* starlog: captured */
@@ -523,7 +525,7 @@ static const char* mfscript_TftcFile(int nameIndex) {
 		case 29:
 			return "songs/16. Funeral.flac";
 		case 31: /* bummer */
-			return "songs/18. Mission Failure.flac";
+			return "music/FRLOSEREB.IMC";
 		default:
 			return NULL;
 	}

@@ -156,6 +156,7 @@ struct TieCockpitRenderer {
 	/* The proportional font of the TFTC cockpit screens, standing in for
 	 * XWA's; unloaded leaves those screens without text. */
 	AeronFontAtlas dc_font;
+	bool dc_hologram; /* the DC text box being drawn is a hologram: larger lines fill its panel */
 	struct TieFlightRenderer* flight_gpu; /* borrowed; for PIP pre-pass */
 	AeronDrawList2D* chrome_bake_list;
 	AeronDrawList2D* before_pip_list;
@@ -3238,7 +3239,8 @@ static void TieCockpitRenderer_DcFlow(TieCockpitRenderer* cg, AeronDrawList2D* l
  * each after its mission time, wrapping under the message. */
 static void TieCockpitRenderer_DrawDcRadio(TieCockpitRenderer* cg, AeronDrawList2D* list, float w, float h,
 										   const TieSnapshot* snap) {
-	const float line_h = h / 20.0f, left = w * TIE_DC_TEXT_MARGIN, right = w * (1.0f - TIE_DC_TEXT_MARGIN);
+	const float line_h = h / (cg->dc_hologram ? 15.0f : 20.0f), left = w * TIE_DC_TEXT_MARGIN,
+				right = w * (1.0f - TIE_DC_TEXT_MARGIN);
 	const AeronRectI clip = { 1, 1, (int)w - 2, (int)h - 2 };
 	TieCockpitRenderer_DcText(cg, list, left, line_h * 1.2f, line_h * 1.25f, AERON_TEXT_LEFT, "Radio Messages",
 							  k_dc_white, &clip);
@@ -3281,7 +3283,8 @@ static void TieCockpitRenderer_DrawDcRadio(TieCockpitRenderer* cg, AeronDrawList
  * centred; goal rows wrap with their continuation indented. */
 static void TieCockpitRenderer_DrawDcGoals(TieCockpitRenderer* cg, AeronDrawList2D* list, float w, float h,
 										   const TieSnapshot* snap) {
-	const float line_h = h / 22.0f, left = w * TIE_DC_TEXT_MARGIN, right = w * (1.0f - TIE_DC_TEXT_MARGIN);
+	const float line_h = h / (cg->dc_hologram ? 16.0f : 22.0f), left = w * TIE_DC_TEXT_MARGIN,
+				right = w * (1.0f - TIE_DC_TEXT_MARGIN);
 	const AeronRectI clip = { 1, 1, (int)w - 2, (int)h - 2 };
 	TieCockpitRenderer_DcText(cg, list, right, line_h * 1.2f, line_h * 1.3f, AERON_TEXT_RIGHT, "Mission Goals",
 							  k_dc_white, &clip);
@@ -3318,9 +3321,30 @@ static void TieCockpitRenderer_DrawDcGoals(TieCockpitRenderer* cg, AeronDrawList
 			y += line_h;
 			continue;
 		}
+		/* A goal row is centred when it fits the line; a longer one wraps from
+		 * the left with its continuation indented. */
+		float total = 0.0f;
+		int last = i;
+		for (; last < snap->hud.objective_count && snap->hud.objectives[last].y == snap->hud.objectives[first].y;
+			 ++last) {
+			const AeronTextStyle unit = { .font = &cg->dc_font,
+										  .scale = row_h / (float)(cg->dc_font.cell_h ? cg->dc_font.cell_h : 1) };
+			total += AeronText_MeasureWidth(&unit, snap->hud.objectives[last].text, -1);
+		}
+		if (total <= right - left) {
+			float pen = centre - total * 0.5f;
+			for (; i < last; ++i) {
+				float colour[4];
+				TieCockpitRenderer_DcPaletteColour(snap, snap->hud.objectives[i].color, colour);
+				pen += TieCockpitRenderer_DcText(cg, list, pen, y, row_h, AERON_TEXT_LEFT, snap->hud.objectives[i].text,
+												 colour, &clip);
+			}
+			y += line_h;
+			continue;
+		}
 		TieDcFlow flow = { .top = y, .left = left, .right = right, .indent = left + line_h, .pen = left,
 						   .line_h = line_h, .max_lines = (int)((bottom - y) / line_h) };
-		for (; i < snap->hud.objective_count && snap->hud.objectives[i].y == snap->hud.objectives[first].y; ++i) {
+		for (; i < last; ++i) {
 			float colour[4];
 			TieCockpitRenderer_DcPaletteColour(snap, snap->hud.objectives[i].color, colour);
 			TieCockpitRenderer_DcFlow(cg, list, &flow, snap->hud.objectives[i].text, colour, &clip);
@@ -3467,6 +3491,32 @@ static void TieCockpitRenderer_DcFill(AeronDrawList2D* list, float x, float y, f
 		.fill_bottom = { r * a, g * a, b * a, a },
 	};
 	AeronDrawList_AddRRect(list, &rect);
+}
+
+/* A gunmetal screen for a hologram text box, like the cockpit's other
+ * panels: a lighter bezel around a dark glass that fades down the screen. */
+static void TieCockpitRenderer_DrawDcHologramPanel(AeronDrawList2D* list, float w, float h) {
+	const float bezel = fmaxf(fminf(w, h) * 0.035f, 2.0f);
+	AeronDrawList2DRRect frame = {
+		.dst_w = w,
+		.dst_h = h,
+		.radius_px = bezel * 1.5f,
+		.soft_px = 1.0f,
+		.fill_top = { 0.03f, 0.031f, 0.034f, 1.0f },
+		.fill_bottom = { 0.016f, 0.017f, 0.019f, 1.0f },
+	};
+	AeronDrawList_AddRRect(list, &frame);
+	AeronDrawList2DRRect glass = {
+		.dst_x = bezel,
+		.dst_y = bezel,
+		.dst_w = w - 2.0f * bezel,
+		.dst_h = h - 2.0f * bezel,
+		.radius_px = bezel,
+		.soft_px = 1.0f,
+		.fill_top = { 0.009f, 0.0095f, 0.011f, 1.0f },
+		.fill_bottom = { 0.004f, 0.004f, 0.005f, 1.0f },
+	};
+	AeronDrawList_AddRRect(list, &glass);
 }
 
 /* True when instrument `id` is not drawn as itself on this cockpit: a DC
@@ -3823,12 +3873,12 @@ static void TieCockpitRenderer_DrawDcTargeting(TieCockpitRenderer* cg, const str
 	AeronTexture* pip_texture = cg->flight_gpu ? TieFlightRenderer_PipTexture(cg->flight_gpu) : NULL;
 	if (pip_texture && snap->cockpit.pip_target_present && snap->cockpit.pip_w && snap->cockpit.pip_h) {
 		const float aspect = (float)snap->cockpit.pip_w / (float)snap->cockpit.pip_h;
-		float view_h = h * 0.8f, view_w = view_h * aspect;
+		float view_h = h * 0.88f, view_w = view_h * aspect;
 		if (view_w > w * 0.5f) {
 			view_w = w * 0.5f;
 			view_h = view_w / aspect;
 		}
-		const float x0 = (w - view_w) * 0.5f, y0 = h * 0.15f + (h * 0.8f - view_h) * 0.5f;
+		const float x0 = (w - view_w) * 0.5f, y0 = h * 0.1f + (h * 0.88f - view_h) * 0.5f;
 		const float x1 = x0 + view_w, y1 = y0 + view_h;
 		AeronDrawList2DQuad4 quad = {
 			.texture = pip_texture,
@@ -3842,13 +3892,13 @@ static void TieCockpitRenderer_DrawDcTargeting(TieCockpitRenderer* cg, const str
 		AeronDrawList_AddQuad4(list, &quad);
 	}
 
-	const float left = w * 0.1f, right = w * 0.9f, row_h = h * 0.068f;
+	const float left = w * 0.1f, right = w * 0.9f, row_h = h * 0.072f;
 	char text[48];
 	TieCockpitRenderer_DcPlainText(hud->target_name, text, sizeof text);
-	TieCockpitRenderer_DcText(cg, list, w * 0.5f, h * 0.05f, h * 0.115f, AERON_TEXT_CENTER, text, k_red, &clip);
+	TieCockpitRenderer_DcText(cg, list, w * 0.5f, h * 0.02f, h * 0.125f, AERON_TEXT_CENTER, text, k_red, &clip);
 	if (hud->target_order_text[0]) {
 		TieCockpitRenderer_DcPlainText(hud->target_order_text, text, sizeof text);
-		TieCockpitRenderer_DcText(cg, list, w * 0.5f, h * 0.165f, h * 0.065f, AERON_TEXT_CENTER, text, k_orange, &clip);
+		TieCockpitRenderer_DcText(cg, list, w * 0.5f, h * 0.15f, h * 0.065f, AERON_TEXT_CENTER, text, k_orange, &clip);
 	}
 
 	/* Label over value, a column on each side of the view. */
@@ -3858,10 +3908,10 @@ static void TieCockpitRenderer_DrawDcTargeting(TieCockpitRenderer* cg, const str
 		bool right;
 		float y;
 	} k_readouts[] = {
-		{ "SHD%", TIE_HUDI_TARGET_SHIELD_PCT, false, 0.34f },
-		{ "HULL%", TIE_HUDI_TARGET_HULL_PCT, false, 0.53f },
-		{ "SYS%", TIE_HUDI_TARGET_SUBSYSTEM_PCT, true, 0.34f },
-		{ "DIST", TIE_HUDI_TARGET_DIST_KM_INT, true, 0.53f },
+		{ "SHD%", TIE_HUDI_TARGET_SHIELD_PCT, false, 0.3f },
+		{ "HULL%", TIE_HUDI_TARGET_HULL_PCT, false, 0.54f },
+		{ "SYS%", TIE_HUDI_TARGET_SUBSYSTEM_PCT, true, 0.3f },
+		{ "DIST", TIE_HUDI_TARGET_DIST_KM_INT, true, 0.54f },
 	};
 	for (size_t i = 0; i < sizeof k_readouts / sizeof k_readouts[0]; ++i) {
 		const float x = k_readouts[i].right ? right : left;
@@ -3876,11 +3926,11 @@ static void TieCockpitRenderer_DrawDcTargeting(TieCockpitRenderer* cg, const str
 		TieCockpitRenderer_DcText(cg, list, x, h * k_readouts[i].y + row_h * 0.95f, row_h, align, text, k_value, &clip);
 	}
 
-	TieCockpitRenderer_DcText(cg, list, left, h * 0.79f, row_h, AERON_TEXT_LEFT,
+	TieCockpitRenderer_DcText(cg, list, left, h * 0.86f, row_h, AERON_TEXT_LEFT,
 							  hud->target_cargo[0] ? hud->target_cargo : "No Cargo", k_label, &clip);
 	if (hud->target_subsystem_text[0]) {
 		TieCockpitRenderer_DcPlainText(hud->target_subsystem_text, text, sizeof text);
-		TieCockpitRenderer_DcText(cg, list, right, h * 0.79f, row_h, AERON_TEXT_RIGHT, text, k_green, &clip);
+		TieCockpitRenderer_DcText(cg, list, right, h * 0.86f, row_h, AERON_TEXT_RIGHT, text, k_green, &clip);
 	}
 }
 
@@ -3907,11 +3957,13 @@ static void TieCockpitRenderer_BeginDcSurfaces(TieCockpitRenderer* cg, const Tie
 			struct TieCockpitRendererSurface* surface = TieCockpitRenderer_OpenDcSurface(cg, s, w, h);
 			if (!surface)
 				continue;
-			/* XWA projects a hologram text box in the air over a plain grey panel. */
+			/* XWA projects a hologram text box in the air; here it gets a screen. */
 			if (dc_screen->hologram &&
 				(dc_screen->source == TIE_DC_LEFT_TEXT || dc_screen->source == TIE_DC_RIGHT_TEXT))
-				TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, (float)w, (float)h, 0.018f, 0.018f, 0.019f, 1.0f);
+				TieCockpitRenderer_DrawDcHologramPanel(surface->list, (float)w, (float)h);
+			cg->dc_hologram = dc_screen->hologram;
 			TieCockpitRenderer_DrawDcGauge(cg, surface, entry, dc_screen->source, occurrence, snap);
+			cg->dc_hologram = false;
 			continue;
 		}
 		if (occurrence > 0)
@@ -4119,7 +4171,7 @@ static void TieCockpitRenderer_DrawDcEffects(TieCockpitRenderer* cg, bool over) 
 		}
 		return;
 	}
-	static const float k_cover[4] = { 0.24f, 0.24f, 0.24f, 1.0f }, k_light[4] = { 0.15f, 0.15f, 0.15f, 0.0f };
+	static const float k_cover[4] = { 0.19f, 0.19f, 0.19f, 1.0f }, k_light[4] = { 0.15f, 0.15f, 0.15f, 0.0f };
 	for (int pass = 0; effects && pass < 2; ++pass)
 		for (int e = 0; e < effects->count; ++e) {
 			const TieDcEffect* effect = &effects->items[e];

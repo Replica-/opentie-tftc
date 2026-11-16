@@ -8,9 +8,13 @@
 #include "aeron/asset/opt_model.h"
 #include "aeron/render.h"
 #include "aeron/scene/mesh.h"
+#include "aeron/scene/scene3d.h"
 #include "aeron/vfs.h"
 
 struct TieFlightRenderer;
+struct TieFlightSpeciesSceneShip;
+struct TieFlightObjectState;
+struct TieSnapshot;
 
 /* Material values of an XWA effects .mat file, ready for
  * AeronOptModelBuildOptions. Overrides name strings live in `storage`. */
@@ -42,6 +46,19 @@ int TieFlightTftc_HiddenMeshes(AeronVfs* vfs, const char* ini_path, int* out, in
  * then drawn. */
 AeronSceneMesh* TieFlightTftcShips_Load(struct TieFlightRenderer* g, AeronCommandBuffer* cmd,
 										uint16_t species_idx);
+
+/* Pairs each rotary gun turret of the species' TFTC model with the original
+ * model's turret nearest its pivot, on the same face of the hull where one
+ * exists. The pairing is cosmetic: the TFTC turret takes its pair's aim. */
+void TieFlightTftcShips_PairTurrets(struct TieFlightSpeciesSceneShip* s);
+/* True when the craft's TFTC model has turrets to turn this frame. */
+bool TieFlightTftcShips_NeedsMeshTable(const struct TieFlightSpeciesSceneShip* s,
+									   const struct TieFlightObjectState* fl, const struct TieSnapshot* curr);
+/* Mesh table for the TFTC model: each paired turret turned about its own
+ * pivot to face where its original turret faces, every other mesh at rest. */
+void TieFlightTftcShips_BuildMeshTable(const struct TieFlightSpeciesSceneShip* s,
+									   const struct TieFlightObjectState* fl, const struct TieSnapshot* curr,
+									   AeronSceneMeshTable* out);
 
 /* Engine glows of a TFTC model, from its OPT's EngineGlow nodes, drawn the
  * way OpenXWA draws them (xwa_remaster/ship.c XwaRemasterShip_SubmitEngineGlows):

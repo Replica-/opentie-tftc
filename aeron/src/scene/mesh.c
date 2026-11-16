@@ -400,6 +400,9 @@ AeronSceneMesh* AeronScene_MeshCreate(AeronCommandBuffer* cmd, const AeronFlight
 			rotation->axis[0]      = component->rotation.rotation_axis.x;
 			rotation->axis[1]      = component->rotation.rotation_axis.y;
 			rotation->axis[2]      = component->rotation.rotation_axis.z;
+			rotation->direction[0] = component->rotation.direction_axis.x;
+			rotation->direction[1] = component->rotation.direction_axis.y;
+			rotation->direction[2] = component->rotation.direction_axis.z;
 		}
 	}
 	for (uint32_t i = 0; i < AERON_MAX_MESH_SLOTS; i++) {

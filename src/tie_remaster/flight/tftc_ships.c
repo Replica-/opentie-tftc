@@ -349,6 +349,119 @@ AeronSceneMesh* TieFlightTftcShips_Load(TieFlightRenderer* g, AeronCommandBuffer
 	return mesh;
 }
 
+/* OPT mesh type of the turrets anim_updateanimation aims. */
+#define TIE_FLIGHT_TFTC_ROTARY_GUN_TURRET 21
+
+static bool TieFlightTftcShips_IsTurret(const AeronMeshRot* rotation) {
+	return rotation->has_rotation && rotation->mesh_type == TIE_FLIGHT_TFTC_ROTARY_GUN_TURRET;
+}
+
+static float TieFlightTftcShips_Dot(const float a[3], const float b[3]) {
+	return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+void TieFlightTftcShips_PairTurrets(TieFlightSpeciesSceneShip* s) {
+	memset(s->tftc_turret_source, -1, sizeof s->tftc_turret_source);
+	s->tftc_turret_count = 0;
+	if (!s->mesh || !s->tftc_mesh)
+		return;
+	for (int t = 0; t < AERON_MAX_MESH_SLOTS; ++t) {
+		const AeronMeshRot* turret = &s->tftc_mesh->mesh_rot[t];
+		if (!TieFlightTftcShips_IsTurret(turret))
+			continue;
+		/* A turret under the hull turns about the opposite axis to one on
+		 * top; pair like with like before falling back to any turret. */
+		int best = -1;
+		bool best_same_face = false;
+		float best_distance = 0.0f;
+		for (int o = 0; o < AERON_MAX_MESH_SLOTS; ++o) {
+			const AeronMeshRot* original = &s->mesh->mesh_rot[o];
+			if (!TieFlightTftcShips_IsTurret(original))
+				continue;
+			const bool same_face = TieFlightTftcShips_Dot(turret->axis, original->axis) > 0.0f;
+			const float delta[3] = { turret->pivot[0] - original->pivot[0], turret->pivot[1] - original->pivot[1],
+									 turret->pivot[2] - original->pivot[2] };
+			const float distance = TieFlightTftcShips_Dot(delta, delta);
+			if (best < 0 || (same_face && !best_same_face) ||
+				(same_face == best_same_face && distance < best_distance)) {
+				best = o;
+				best_same_face = same_face;
+				best_distance = distance;
+			}
+		}
+		if (best < 0)
+			return;
+		s->tftc_turret_source[t] = (int8_t)best;
+		++s->tftc_turret_count;
+	}
+	if (s->tftc_turret_count)
+		Aeron_LogInfo("tie.tftc", "%u TFTC turrets follow the original model's", (unsigned)s->tftc_turret_count);
+}
+
+bool TieFlightTftcShips_NeedsMeshTable(const TieFlightSpeciesSceneShip* s, const TieFlightObjectState* fl,
+									   const TieSnapshot* curr) {
+	return s->tftc_turret_count && fl->component_count && curr->flight_components;
+}
+
+/* Angle about `turret`'s axis that turns its rest direction toward where
+ * `original`, turned by `original_angle`, faces. */
+static float TieFlightTftcShips_TurretAngle(const AeronMeshRot* turret, const AeronMeshRot* original,
+											float original_angle) {
+	float rotation[3][4];
+	TieRenderMath_Mat3x4RotationAboutPivot(rotation, original->axis, (const float[3]) { 0.0f, 0.0f, 0.0f },
+										   original_angle);
+	const float facing[3] = { TieFlightTftcShips_Dot(rotation[0], original->direction),
+							  TieFlightTftcShips_Dot(rotation[1], original->direction),
+							  TieFlightTftcShips_Dot(rotation[2], original->direction) };
+	const float axis_length = sqrtf(TieFlightTftcShips_Dot(turret->axis, turret->axis));
+	if (axis_length < 1e-4f)
+		return original_angle;
+	const float axis[3] = { turret->axis[0] / axis_length, turret->axis[1] / axis_length,
+							turret->axis[2] / axis_length };
+	/* Both directions flattened onto the turret's plane of rotation. */
+	const float rest_along = TieFlightTftcShips_Dot(turret->direction, axis);
+	const float facing_along = TieFlightTftcShips_Dot(facing, axis);
+	const float rest[3] = { turret->direction[0] - rest_along * axis[0], turret->direction[1] - rest_along * axis[1],
+							turret->direction[2] - rest_along * axis[2] };
+	const float aim[3] = { facing[0] - facing_along * axis[0], facing[1] - facing_along * axis[1],
+						   facing[2] - facing_along * axis[2] };
+	if (TieFlightTftcShips_Dot(rest, rest) < 1e-6f || TieFlightTftcShips_Dot(aim, aim) < 1e-6f)
+		return original_angle;
+	const float cross[3] = { rest[1] * aim[2] - rest[2] * aim[1], rest[2] * aim[0] - rest[0] * aim[2],
+							 rest[0] * aim[1] - rest[1] * aim[0] };
+	return atan2f(TieFlightTftcShips_Dot(cross, axis), TieFlightTftcShips_Dot(rest, aim));
+}
+
+void TieFlightTftcShips_BuildMeshTable(const TieFlightSpeciesSceneShip* s, const TieFlightObjectState* fl,
+									   const TieSnapshot* curr, AeronSceneMeshTable* out) {
+	for (uint32_t mi = 0; mi < AERON_MAX_MESH_SLOTS; ++mi) {
+		TieRenderMath_Mat3x4Identity(out->rows[mi]);
+		out->visibility_packed[mi >> 2][mi & 3] = 1.0f;
+		out->highlight_packed[mi >> 2][mi & 3] = 0.0f;
+		out->markings_packed[mi >> 2][mi & 3] = 0.0f;
+		out->emissive_packed[mi >> 2][mi & 3] = 1.0f;
+	}
+	/* The original turrets' angles, in the snapshot's renderer convention. */
+	float angles[AERON_MAX_MESH_SLOTS];
+	bool turned[AERON_MAX_MESH_SLOTS] = { false };
+	if (!curr->flight_components)
+		return;
+	for (uint32_t ci = 0; ci < fl->component_count; ++ci) {
+		const TieFlightObjectComponent* c = &curr->flight_components[fl->component_start + ci];
+		if (c->mesh_idx >= AERON_MAX_MESH_SLOTS || !(c->flags & 0x2u))
+			continue;
+		angles[c->mesh_idx] = (float)(uint16_t)c->rotation_angle * (2.0f * 3.14159265358979323846f / 65536.0f);
+		turned[c->mesh_idx] = true;
+	}
+	for (int t = 0; t < AERON_MAX_MESH_SLOTS; ++t) {
+		const int o = s->tftc_turret_source[t];
+		if (o < 0 || !turned[o])
+			continue;
+		const AeronMeshRot* turret = &s->tftc_mesh->mesh_rot[t];
+		const float angle = TieFlightTftcShips_TurretAngle(turret, &s->mesh->mesh_rot[o], angles[o]);		TieRenderMath_Mat3x4RotationAboutPivot(out->rows[t], turret->axis, turret->pivot, angle);
+	}
+}
+
 #define TIE_FLIGHT_TFTC_GLOW_SIZE 64
 /* HDR boost of the glow colours (OpenXWA models.engine_emissive_strength). */
 #define TIE_FLIGHT_TFTC_GLOW_STRENGTH 10.0f

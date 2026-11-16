@@ -17,15 +17,18 @@ extern "C" {
 /* Per-component articulation source. Indexed by model-local component ordinal
  * (0..AERON_MAX_MESH_SLOTS-1). The game-side table builder reads
  * axis/pivot/has_rotation here and composes the per-mesh affine.
+ * `direction` is the component's rest-facing axis (a turret's barrels at
+ * angle 0), zero when the source carries none.
  *
  * Unused slots stay zero (has_rotation == 0) — the slot still
  * contributes an identity affine to the storage record. */
 typedef struct AeronMeshRot {
 	float   axis[3];
 	float   pivot[3];
+	float   direction[3];
 	uint8_t has_rotation;
 	uint8_t mesh_type; /* OPT mesh-type enum (MainHull=1, Wing=2, …) */
-	uint8_t _pad[2];   /* required to keep array stride at 32 B */
+	uint8_t _pad[2];
 } AeronMeshRot;
 
 #ifdef __cplusplus

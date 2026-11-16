@@ -244,11 +244,11 @@ static void TieFlightRenderer_BuildInstance(TieFlightRenderer* g, AeronSceneMesh
 											const TieFlightMotionBlurPrevious* mb, uint16_t curr_index,
 											bool is_static, const AeronSceneMeshTable* table) {
 	memset(in, 0, sizeof *in);
-	/* A TFTC model shares no mesh ordinals with the craft's components, so it
-	 * draws whole and unarticulated. Debris shows one original submesh. */
+	/* A TFTC model shares no mesh ordinals with the craft's components; its
+	 * table only turns its turrets. Debris shows one original submesh. */
 	const bool tftc = s->tftc_mesh && fl->genus != TIE_GENUS_DEBRIS;
 	in->mesh = tftc ? s->tftc_mesh : s->mesh;
-	in->mesh_table = tftc ? NULL : table;
+	in->mesh_table = table;
 	/* OPTs may use opposite-wound faces for distinct interior and exterior
 	 * textures. Preserve the single-sided contract through remastered assets. */
 	if (in->mesh->all_materials_single_sided)
@@ -424,10 +424,15 @@ void TieFlightRenderer_SceneSubmit(TieFlightRenderer* g, const TieSnapshot* curr
 		 * identity default (hidden components / articulation / debris);
 		 * NULL lets the scene push its cached identity. */
 		const AeronSceneMeshTable* table = NULL;
-		if (TieFlightRenderer_CraftNeedsCustomMeshTable(s, fl, curr) &&
+		const bool tftc = s->tftc_mesh && fl->genus != TIE_GENUS_DEBRIS;
+		if ((tftc ? TieFlightTftcShips_NeedsMeshTable(s, fl, curr)
+				  : TieFlightRenderer_CraftNeedsCustomMeshTable(s, fl, curr)) &&
 			table_pool_used < TIE_FLIGHT_SCENE_MAX_INSTANCES) {
 			AeronSceneMeshTable* mtu = &g->hd_scene_tables[table_pool_used++];
-			TieFlightMesh_BuildmeshTable(s->mesh->mesh_rot, fl, curr, mtu);
+			if (tftc)
+				TieFlightTftcShips_BuildMeshTable(s, fl, curr, mtu);
+			else
+				TieFlightMesh_BuildmeshTable(s->mesh->mesh_rot, fl, curr, mtu);
 			table = mtu;
 		}
 
@@ -467,7 +472,10 @@ bool TieFlightRenderer_SceneAddPipInstance(TieFlightRenderer* g, AeronScene3D* s
 
 	/* PIP draws exactly one craft — always build the per-craft mesh
 	 * table (the identity shortcut only pays off across a walk). */
-	TieFlightMesh_BuildmeshTable(s->mesh->mesh_rot, fl, snap, &g->pip_scene_table);
+	if (s->tftc_mesh && fl->genus != TIE_GENUS_DEBRIS)
+		TieFlightTftcShips_BuildMeshTable(s, fl, snap, &g->pip_scene_table);
+	else
+		TieFlightMesh_BuildmeshTable(s->mesh->mesh_rot, fl, snap, &g->pip_scene_table);
 
 	AeronSceneMeshInstance in;
 	TieFlightRenderer_BuildInstance(g, &in, s, fl, view_proj, cam_pos, fl->world_pos,

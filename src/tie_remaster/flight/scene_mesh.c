@@ -82,6 +82,7 @@ bool TieFlightRenderer_EnsureSceneSpeciesShip(TieFlightRenderer* g, AeronCommand
 	s->tftc_mesh = TieFlightTftcShips_Load(g, cmd, species_idx);
 	if (s->tftc_mesh && s->tftc_mesh->engine_glow_count)
 		TieFlightTftcShips_EnsureGlowTexture(g, cmd);
+	TieFlightTftcShips_PairTurrets(s);
 
 	s->ready = true;
 	Aeron_LogInfo("tie.flight", "uploaded species %u: %u vertices, %u primitives, %u materials, %u variants",

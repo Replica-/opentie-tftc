@@ -53,6 +53,10 @@ typedef struct TieFlightSpeciesSceneShip {
 	/* TFTC model drawn in place of `mesh` (tftc_ships.c); NULL when the
 	 * species has none. Debris keeps `mesh`. */
 	AeronSceneMesh* tftc_mesh;
+	/* Per tftc_mesh slot, the `mesh` turret whose angle that TFTC turret
+	 * follows, or -1 (TieFlightTftcShips_PairTurrets). */
+	int8_t tftc_turret_source[AERON_MAX_MESH_SLOTS];
+	uint8_t tftc_turret_count;
 
 	bool tried;
 	bool ready;

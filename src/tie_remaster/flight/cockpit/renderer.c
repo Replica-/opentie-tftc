@@ -3820,6 +3820,31 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 	 * segmented setting gauges: a block per step of the setting, in the
 	 * craft's colours (the missile boat's beam red and its engine orange). */
 	const char* model = cg->flight_gpu ? TieFlightRenderer_Cockpit3dModel(cg->flight_gpu) : NULL;
+	if (model && strcmp(model, "TieAvengerCockpit") == 0 &&
+		(source == TIE_DC_LASER_POWER || source == TIE_DC_SHIELD_POWER)) {
+		/* The TIE Avenger's rings (shields left, lasers right) show the
+		 * setting a quarter per step, clockwise from 9 o'clock, each quarter
+		 * its own colour: low orange, middle red, high yellow, maximum blue;
+		 * black above the setting, black notches between. The shield ring's
+		 * display runs counterclockwise from 6 o'clock and the laser ring's
+		 * clockwise, so `quarter` gives each step's place along it. */
+		static const float k_steps[4][3] = {
+			{ 1.0f, 0.45f, 0.05f }, { 1.0f, 0.1f, 0.08f }, { 0.95f, 0.85f, 0.1f }, { 0.15f, 0.65f, 1.0f },
+		};
+		static const int k_shield_quarter[4] = { 2, 1, 0, 3 }, k_laser_quarter[4] = { 1, 2, 3, 0 };
+		const int* quarter = source == TIE_DC_SHIELD_POWER ? k_shield_quarter : k_laser_quarter;
+		const int lit = level < 0 ? 0 : level > 4 ? 4 : level;
+		const bool along_x = w >= h;
+		const float length = along_x ? w : h, gap = length * 0.02f, cell = (length - 4.0f * gap) / 4.0f;
+		TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, w, h, 0.002f, 0.002f, 0.003f, 1.0f);
+		for (int i = 0; i < lit; ++i) {
+			const float at = gap * 0.5f + (float)quarter[i] * (cell + gap);
+			const float x = along_x ? at : 0.0f, y = along_x ? 0.0f : length - at - cell;
+			TieCockpitRenderer_DcFill(surface->list, x, y, along_x ? cell : w, along_x ? h : cell, k_steps[i][0],
+									  k_steps[i][1], k_steps[i][2], 1.0f);
+		}
+		return;
+	}
 	if (model && strncmp(model, "Tie", 3) != 0) {
 		const bool missile_boat = strcmp(model, "MissileBoatCockpit") == 0;
 		static const float k_green[3] = { 0.1f, 0.9f, 0.2f }, k_yellow[3] = { 0.95f, 0.85f, 0.1f },

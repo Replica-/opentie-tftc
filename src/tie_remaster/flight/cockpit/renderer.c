@@ -3474,11 +3474,16 @@ static void TieCockpitRenderer_DcFill(AeronDrawList2D* list, float x, float y, f
 }
 
 /* A sleek screen for a hologram text box: dark gunmetal glass with rounded
- * corners, fading down the screen. */
+ * corners, fading down the screen. It stops short of the target's edge:
+ * faces running past the display sample the clamped edge texels, which
+ * would smear the screen out into flaps. */
 static void TieCockpitRenderer_DrawDcHologramPanel(AeronDrawList2D* list, float w, float h) {
+	const float edge = 3.0f;
 	AeronDrawList2DRRect glass = {
-		.dst_w = w,
-		.dst_h = h,
+		.dst_x = edge,
+		.dst_y = edge,
+		.dst_w = w - 2.0f * edge,
+		.dst_h = h - 2.0f * edge,
 		.radius_px = fminf(w, h) * 0.06f,
 		.soft_px = 1.5f,
 		.fill_top = { 0.014f, 0.015f, 0.017f, 1.0f },

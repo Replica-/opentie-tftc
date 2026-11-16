@@ -44,6 +44,8 @@ typedef enum TieDcSource {
 	TIE_DC_TARGET_CARGO,      /* TARGETED_OBJ_CARGO_SRC */
 	TIE_DC_TARGET_PART,       /* TARGETED_OBJ_SUBCMP_SRC: the targeted subsystem */
 	TIE_DC_MISSILES_ALL,      /* AUTOSIZE_MISSILES_MIS_SRC: every launcher's warheads */
+	TIE_DC_ZOOM_2X,           /* not XWA's: the view ahead at 2x (the TIE Bomber's upper scope) */
+	TIE_DC_ZOOM_3X,           /* not XWA's: the view ahead at 3x (the TIE Bomber's lower scope) */
 	TIE_DC_SOURCE_COUNT,
 } TieDcSource;
 

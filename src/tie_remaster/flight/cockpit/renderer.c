@@ -3107,6 +3107,8 @@ static void TieCockpitRenderer_EndSurface(TieCockpitRenderer* cg, bool began) {
  * and the speed, clock, warhead, countermeasure and shield readouts. */
 static bool TieCockpitRenderer_DcGaugeSource(TieDcSource source) {
 	switch (source) {
+		case TIE_DC_ZOOM_2X:
+		case TIE_DC_ZOOM_3X:
 		case TIE_DC_LASERS:
 		case TIE_DC_LASER_POWER:
 		case TIE_DC_SHIELD_POWER:
@@ -3331,6 +3333,40 @@ static void TieCockpitRenderer_DrawDcGoals(TieCockpitRenderer* cg, AeronDrawList
 		}
 		y += (float)(flow.line + 1) * line_h;
 	}
+}
+
+/* How much of the view's height a scope shows at 1x: about its own height
+ * on screen, so 2x doubles what is behind it. */
+#define TIE_DC_ZOOM_BASE 0.12f
+
+/* A scope magnifying the view ahead `zoom` times: the middle of this frame's
+ * scene, before the cockpit's screens are laid on it, stretched over the
+ * screen. The TIE Bomber's scope faces show the middle third of their
+ * display (its .dc spans -256..512 of the face), the right way up only with
+ * the display turned over. */
+static void TieCockpitRenderer_DrawDcZoom(TieCockpitRenderer* cg, AeronDrawList2D* list, float w, float h,
+										  float zoom) {
+	AeronRenderTarget* scene = cg->flight_gpu ? TieFlightRenderer_SceneRt(cg->flight_gpu) : NULL;
+	int view_w = 0, view_h = 0;
+	if (cg->flight_gpu)
+		TieFlightRenderer_GetRtDims(cg->flight_gpu, &view_w, &view_h);
+	if (!scene || view_w <= 0 || view_h <= 0)
+		return;
+	const float half_v = -3.0f * TIE_DC_ZOOM_BASE / zoom * 0.5f;
+	const float half_u = fabsf(half_v) * ((float)view_h / (float)view_w) * (w / h);
+	AeronDrawList2DQuad4 quad = {
+		.texture = Aeron_RenderTargetGetTexture(scene),
+		.tint = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.blend = AERON_BLIT2D_BLEND_NONE,
+		.filter = AERON_BLIT2D_FILTER_LINEAR,
+		.corners = {
+			{ 0.0f, 0.0f, 0.5f - half_u, 0.5f - half_v },
+			{ w, 0.0f, 0.5f + half_u, 0.5f - half_v },
+			{ 0.0f, h, 0.5f - half_u, 0.5f + half_v },
+			{ w, h, 0.5f + half_u, 0.5f + half_v },
+		},
+	};
+	AeronDrawList_AddQuad4(list, &quad);
 }
 
 /* XWA's beam display: a striped blue sphere in a red ring. */
@@ -3613,6 +3649,10 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 			return;
 		case TIE_DC_BEAM:
 			TieCockpitRenderer_DrawDcBeamSphere(surface->list, w, h);
+			return;
+		case TIE_DC_ZOOM_2X:
+		case TIE_DC_ZOOM_3X:
+			TieCockpitRenderer_DrawDcZoom(cg, surface->list, w, h, source == TIE_DC_ZOOM_2X ? 2.0f : 3.0f);
 			return;
 		case TIE_DC_TARGETING:
 			TieCockpitRenderer_DrawDcTargeting(cg, surface, snap);

@@ -321,6 +321,20 @@ static void TieFlightCockpit3d_PlaceHolograms(TieDcLayout* dc, const char* model
 	}
 }
 
+/* The TIE Bomber's scopes beside the canopy repeat the radars in TFTC; here
+ * they magnify the view ahead, the upper 2x and the lower 3x. */
+static void TieFlightCockpit3d_PlaceZoomScopes(TieDcLayout* dc, const char* model) {
+	if (strcmp(model, "TieBomberCockpit") != 0)
+		return;
+	int seen[TIE_DC_SOURCE_COUNT] = { 0 };
+	for (int s = 0; s < dc->count; ++s) {
+		TieDcScreen* screen = &dc->screens[s];
+		if ((screen->source == TIE_DC_LEFT_SENSOR || screen->source == TIE_DC_RIGHT_SENSOR) &&
+			seen[screen->source]++ > 0)
+			screen->source = screen->source == TIE_DC_LEFT_SENSOR ? TIE_DC_ZOOM_2X : TIE_DC_ZOOM_3X;
+	}
+}
+
 /* A screen's meshes, indexed in the OPT without its `hidden` meshes, by their
  * index in the whole OPT. */
 static void TieFlightCockpit3d_RemapMeshes(TieDcScreen* screen, const int* hidden, int hidden_count, int total) {
@@ -536,8 +550,10 @@ static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cm
 	}
 	free(cover_text);
 	TieFlightCockpit3d_LoadEye(g, model);
-	if (g->cockpit3d_dc_loaded)
+	if (g->cockpit3d_dc_loaded) {
 		TieFlightCockpit3d_PlaceHolograms(&g->cockpit3d_dc, model);
+		TieFlightCockpit3d_PlaceZoomScopes(&g->cockpit3d_dc, model);
+	}
 	free(shown_meshes);
 	opt_free(opt);
 

@@ -751,8 +751,11 @@ void TieTftcMusic_Update(void) {
 		(!s_voice.stream || s_pending >= TFTC_TRACK_FAILURE || now - s_track_us >= TFTC_HOLD_US))
 		TieTftcMusic_Switch(s_pending);
 
+	/* The sting follows the volume and speech ducking as it plays. */
 	if (s_sting.stream && !TieTftcVoice_Fill(&s_sting))
 		TieTftcVoice_Close(&s_sting);
+	else if (s_sting.stream)
+		TieTftcVoice_ApplyGain(&s_sting, now, 1.0f);
 	TieTftcMusic_UpdateWaitingSting(now);
 	const float duck_target = s_sting.stream ? TFTC_DUCK_GAIN : 1.0f;
 	if (s_duck > duck_target)

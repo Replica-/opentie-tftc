@@ -677,6 +677,13 @@ tie_add_shaders(flight_shaders
     flight_mesh_classic_lut.frag.hlsl
     flight_hyperstars.vert.hlsl
     flight_hyperstars.frag.hlsl
+    hyperspace_streak.vert.hlsl
+    hyperspace_streak.frag.hlsl
+    hyperspace_tunnel.vert.hlsl
+    hyperspace_tunnel.frag.hlsl
+    hyperspace_environment.comp.hlsl
+    hyperspace_warp_sky.frag.hlsl
+    hyperspace_warp.frag.hlsl
     flight_stars.vert.hlsl
     flight_stars.frag.hlsl
     # cockpit_gpu shares the flight shader build target.

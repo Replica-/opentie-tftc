@@ -25,6 +25,7 @@ add_library(tie_remaster STATIC
     flight/pipelines.c
     flight/classic_mesh.c
     flight/hyperstars.c
+    flight/hyperspace.c
     flight/pbr.c
     flight/point_lights.c
     flight/sprite_cache.c

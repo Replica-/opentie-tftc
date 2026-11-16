@@ -12,7 +12,7 @@ add_subdirectory(lfd2gltf)
 add_subdirectory(species_billboard)
 add_subdirectory(starfield)
 
-# opt2gltf and aeron_gltf_cook are provided by the Aeron submodule.
+# opt2gltf and aeron_gltf_cook are provided by Aeron (aeron/).
 add_executable(opt_dump opt/opt_dump.c)
 target_link_libraries(opt_dump PRIVATE lucas_opt tie_libm)
 set_target_properties(opt_dump PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})

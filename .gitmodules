@@ -1,7 +1,3 @@
-[submodule "aeron"]
-	path = aeron
-	url = https://github.com/Replica-/Aeron.git
-	branch = main
 [submodule "src/landru"]
 	path = src/landru
 	url = https://github.com/elyosh/landru.git

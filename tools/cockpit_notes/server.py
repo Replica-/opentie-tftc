@@ -1,14 +1,17 @@
 """Cockpit Notes: a local page for marking up OpenTIE cockpit captures.
 
 Serves http://localhost:8765/. Each craft shows OpenTIE's latest capture
-beside TFTC's screenshot from docs/tftc_reference/. Boxes drawn on a
-capture are saved with their note to docs/tftc_reference/notes.json, where
-Claude reads them and answers. "Capture again" flies the craft's mission
-headless and replaces OpenTIE's capture.
+beside TFTC's screenshot from docs/tftc_reference/. What you paint on a
+capture is sent with your message to docs/tftc_reference/inbox/ as a
+marked-up image and a .json file; Claude's watcher
+(tools/cockpit_notes/wait_for_message.py) wakes on it and Claude answers
+in the chat. "Capture again" flies the craft's mission headless and
+replaces OpenTIE's capture.
 
 Run from the repository root:  python tools/cockpit_notes/server.py
 """
 
+import base64
 import json
 import os
 import subprocess
@@ -21,6 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 REFERENCE = ROOT / "docs" / "tftc_reference"
 NOTES = REFERENCE / "notes.json"
+INBOX = REFERENCE / "inbox"
 PAGE = Path(__file__).with_name("index.html")
 GAME = ROOT / "build" / "Debug" / "OpenTIE.exe"
 PORT = int(os.environ.get("COCKPIT_NOTES_PORT", "8765"))
@@ -115,6 +119,20 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/notes":
             with lock:
                 self.json(load_notes())
+        elif path == "/api/inbox":
+            items = []
+            for file in sorted(INBOX.glob("*.json"), reverse=True)[:30]:
+                try:
+                    items.append(json.loads(file.read_text(encoding="utf-8")))
+                except (OSError, json.JSONDecodeError):
+                    pass
+            self.json(items)
+        elif path.startswith("/inbox/"):
+            file = INBOX / Path(path[7:]).name
+            if file.suffix.lower() == ".jpg" and file.exists():
+                self.send(200, file.read_bytes(), "image/jpeg")
+            else:
+                self.send(404)
         elif path.startswith("/img/"):
             file = REFERENCE / Path(path[5:]).name
             if file.suffix.lower() in (".png", ".jpg") and file.exists():
@@ -126,7 +144,30 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?")[0]
-        if path == "/api/notes":
+        if path == "/api/send":
+            data = self.body()
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            message_id = f"{stamp}-{uuid.uuid4().hex[:4]}"
+            INBOX.mkdir(parents=True, exist_ok=True)
+            image = data.get("image", "")
+            if image.startswith("data:image/jpeg;base64,"):
+                (INBOX / f"{message_id}.jpg").write_bytes(base64.b64decode(image.split(",", 1)[1]))
+            craft = next((c for c in CRAFT if c[0] == data.get("shot")), None)
+            message = {
+                "id": message_id,
+                "shot": data.get("shot"),
+                "craft": craft[1] if craft else data.get("shot"),
+                "view": data.get("view", "OpenTIE"),
+                "text": data.get("text", ""),
+                "marks": data.get("marks", 0),
+                "image": f"{message_id}.jpg" if image else None,
+                "imagePath": str(INBOX / f"{message_id}.jpg") if image else None,
+                "status": "sent",
+                "sentAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }
+            (INBOX / f"{message_id}.json").write_text(json.dumps(message, indent=2), encoding="utf-8")
+            self.json(message, 201)
+        elif path == "/api/notes":
             data = self.body()
             note = {
                 "id": uuid.uuid4().hex[:8],

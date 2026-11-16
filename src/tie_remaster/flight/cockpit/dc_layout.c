@@ -267,6 +267,11 @@ bool TieDcLayout_Build(const char* source_text, const opt_file_t* opt, TieDcLayo
 			TieDcScreen* screen = &out->screens[out->count];
 			memset(screen, 0, sizeof *screen);
 			if (TieDcLayout_Place(opt, texture, x0 / cover_w, y0 / cover_h, x1 / cover_w, y1 / cover_h, screen)) {
+				screen->texture = texture;
+				screen->u0 = x0 / cover_w;
+				screen->v0 = y0 / cover_h;
+				screen->u1 = x1 / cover_w;
+				screen->v1 = y1 / cover_h;
 				screen->source = source;
 				screen->hologram = hologram;
 				++out->count;
@@ -278,6 +283,19 @@ bool TieDcLayout_Build(const char* source_text, const opt_file_t* opt, TieDcLayo
 	}
 	free(text);
 	return out->count > 0;
+}
+
+void TieDcLayout_ExtendDown(TieDcScreen* screen, const opt_file_t* opt, float fraction) {
+	TieDcScreen placed = *screen;
+	placed.triangles = NULL;
+	placed.triangle_count = 0;
+	placed.v1 = screen->v1 + (screen->v1 - screen->v0) * fraction;
+	if (!TieDcLayout_Place(opt, screen->texture, placed.u0, placed.v0, placed.u1, placed.v1, &placed)) {
+		free(placed.triangles);
+		return;
+	}
+	free(screen->triangles);
+	*screen = placed;
 }
 
 bool TieDcLayout_PlaceTexture(const opt_file_t* opt, const char* name, TieDcScreen* out) {

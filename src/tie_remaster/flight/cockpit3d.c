@@ -475,6 +475,10 @@ static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cm
 			memcpy(dc_text, dc_bytes, dc_size);
 			dc_text[dc_size] = '\0';
 			g->cockpit3d_dc_loaded = TieDcLayout_Build(dc_text, &shown, &g->cockpit3d_dc);
+			/* The TIE cockpits' targeting glass reaches below the .dc's display. */
+			for (int s = 0; strncmp(model, "Tie", 3) == 0 && s < g->cockpit3d_dc.count; ++s)
+				if (g->cockpit3d_dc.screens[s].source == TIE_DC_TARGETING)
+					TieDcLayout_ExtendDown(&g->cockpit3d_dc.screens[s], &shown, 0.15f);
 			cover_text = TieFlightCockpit3d_CoverLines(dc_text);
 			free(dc_text);
 			for (int s = 0; shown_meshes && s < g->cockpit3d_dc.count; ++s)

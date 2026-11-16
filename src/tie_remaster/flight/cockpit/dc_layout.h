@@ -64,6 +64,10 @@ typedef struct TieDcScreen {
 	int triangle_count;
 	float aspect; /* width / height of the display on the model */
 	bool hologram; /* XWA projects it in the air, over a plain panel: hologram = 1 */
+	/* Where the display lies on its texture: the texture's index and the
+	 * texture coordinates of its top-left and bottom-right. */
+	int texture;
+	float u0, v0, u1, v1;
 } TieDcScreen;
 
 #define TIE_DC_MAX_SCREENS 32
@@ -84,6 +88,11 @@ void TieDcLayout_Free(TieDcLayout* layout);
  * texture itself: display coordinates are the faces' texture coordinates.
  * False when the texture has no faces. Free the triangles with free(). */
 bool TieDcLayout_PlaceTexture(const opt_file_t* opt, const char* name, TieDcScreen* out);
+/* Moves `screen`'s bottom edge down its texture by `fraction` of its
+ * height and lays it on `opt` again (the model it was built from), for a
+ * screen whose glass reaches past the .dc's display. Its triangles' meshes
+ * index `opt` again afterwards. */
+void TieDcLayout_ExtendDown(TieDcScreen* screen, const opt_file_t* opt, float fraction);
 
 /* The DC source a TIE HUD instrument (or cockpit editor panel id) belongs to. */
 TieDcSource TieDcLayout_SourceOf(int instrument_id);

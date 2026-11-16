@@ -157,6 +157,9 @@ struct TieCockpitRenderer {
 	 * XWA's; unloaded leaves those screens without text. */
 	AeronFontAtlas dc_font;
 	bool dc_hologram; /* the DC text box being drawn is a hologram: larger lines fill its panel */
+	/* The laser recharge setting the TIE pods' edge dashes show, 0..4; -1
+	 * when the cockpit has no such dashes. */
+	int dc_laser_dashes;
 	struct TieFlightRenderer* flight_gpu; /* borrowed; for PIP pre-pass */
 	AeronDrawList2D* chrome_bake_list;
 	AeronDrawList2D* before_pip_list;
@@ -3888,6 +3891,14 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 		}
 		return;
 	}
+	if (model && strncmp(model, "Tie", 3) == 0 && source == TIE_DC_LASER_POWER) {
+		/* The TIE pods' edges carry the laser recharge as a row of dashes,
+		 * each face showing the same part of the display: the display is
+		 * lit whole, and DrawDcScreen lights the dashes up to the setting. */
+		cg->dc_laser_dashes = level < 0 ? 0 : level > 4 ? 4 : level;
+		TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, w, h, 0.1f, 0.9f, 0.2f, 1.0f);
+		return;
+	}
 	if (model && strncmp(model, "Tie", 3) != 0) {
 		const bool missile_boat = strcmp(model, "MissileBoatCockpit") == 0;
 		static const float k_green[3] = { 0.1f, 0.9f, 0.2f }, k_yellow[3] = { 0.95f, 0.85f, 0.1f },
@@ -4128,6 +4139,7 @@ static void TieCockpitRenderer_BeginDcSurfaces(TieCockpitRenderer* cg, const Tie
 											   const TieSnapshot* snap) {
 	const TieCockpitRendererDrawSpace* screen = &cg->pending_space;
 	int seen[TIE_DC_SOURCE_COUNT] = { 0 };
+	cg->dc_laser_dashes = -1;
 	for (int s = 0; s < dc->count; ++s) {
 		const TieDcScreen* dc_screen = &dc->screens[s];
 		const int occurrence = seen[dc_screen->source]++;
@@ -4322,10 +4334,29 @@ static void TieCockpitRenderer_BeginSurfaces(TieCockpitRenderer* cg, int coord_w
  * draws just the triangle. Display coordinates outside 0..1 sample the
  * target's transparent border. */
 static void TieCockpitRenderer_DrawDcFaces(TieCockpitRenderer* cg, AeronTexture* texture, const float tint[4],
-										   const TieDcScreen* dc_screen) {
+										   const TieDcScreen* dc_screen, int dashes) {
 	const TieCockpitRendererDrawSpace* screen = &cg->pending_space;
+	/* With `dashes` (0..4) the faces are four dashes up each of the pods'
+	 * edges: those up to that many from the bottom of each edge are lit,
+	 * the rest dark. Each pod's dashes lie on their own side of x = 0. */
+	float low[2] = { 1e9f, 1e9f }, high[2] = { -1e9f, -1e9f };
+	for (int t = 0; dashes >= 0 && t < dc_screen->triangle_count; ++t) {
+		const TieDcTriangle* tri = &dc_screen->triangles[t];
+		const int side = tri->position[0][0] + tri->position[1][0] + tri->position[2][0] > 0.0f;
+		for (int c = 0; c < 3; ++c) {
+			low[side] = fminf(low[side], tri->position[c][2]);
+			high[side] = fmaxf(high[side], tri->position[c][2]);
+		}
+	}
 	for (int t = 0; t < dc_screen->triangle_count; ++t) {
 		const TieDcTriangle* tri = &dc_screen->triangles[t];
+		float shade = 1.0f;
+		if (dashes >= 0) {
+			const int side = tri->position[0][0] + tri->position[1][0] + tri->position[2][0] > 0.0f;
+			const float z = (tri->position[0][2] + tri->position[1][2] + tri->position[2][2]) / 3.0f;
+			const int dash = (int)((z - low[side]) / fmaxf(high[side] - low[side], 1e-6f) * 4.0f);
+			shade = dash < dashes ? 1.0f : 0.06f;
+		}
 		float clip[3][4];
 		bool visible = true;
 		for (int c = 0; c < 3 && visible; ++c)
@@ -4334,7 +4365,7 @@ static void TieCockpitRenderer_DrawDcFaces(TieCockpitRenderer* cg, AeronTexture*
 			continue;
 		AeronDrawList2DQuad4 quad = {
 			.texture = texture,
-			.tint = { tint[0], tint[1], tint[2], tint[3] },
+			.tint = { tint[0] * shade, tint[1] * shade, tint[2] * shade, tint[3] },
 			.blend = AERON_BLIT2D_BLEND_PMA,
 			.filter = AERON_BLIT2D_FILTER_LINEAR,
 		};
@@ -4393,7 +4424,8 @@ static void TieCockpitRenderer_DrawDcScreen(TieCockpitRenderer* cg, const struct
 		AeronDrawList_AddQuad4(cg->record_list, &quad);
 		return;
 	}
-	TieCockpitRenderer_DrawDcFaces(cg, Aeron_RenderTargetGetTexture(surface->rt), tint, dc_screen);
+	TieCockpitRenderer_DrawDcFaces(cg, Aeron_RenderTargetGetTexture(surface->rt), tint, dc_screen,
+								   dc_screen->source == TIE_DC_LASER_POWER ? cg->dc_laser_dashes : -1);
 }
 
 /* The cockpit's effects image sequences on their textures' faces, under the
@@ -4411,7 +4443,7 @@ static void TieCockpitRenderer_DrawDcEffects(TieCockpitRenderer* cg, bool over) 
 			const TieDcEffect* effect = &effects->items[e];
 			AeronTexture* frame = effect->over ? TieDcEffects_Frame(effects, effect, seconds) : NULL;
 			if (frame)
-				TieCockpitRenderer_DrawDcFaces(cg, frame, k_over, &effect->faces);
+				TieCockpitRenderer_DrawDcFaces(cg, frame, k_over, &effect->faces, -1);
 		}
 		return;
 	}
@@ -4422,7 +4454,7 @@ static void TieCockpitRenderer_DrawDcEffects(TieCockpitRenderer* cg, bool over) 
 			AeronTexture* frame =
 				!effect->over && effect->glow == (pass == 1) ? TieDcEffects_Frame(effects, effect, seconds) : NULL;
 			if (frame)
-				TieCockpitRenderer_DrawDcFaces(cg, frame, effect->glow ? k_light : k_cover, &effect->faces);
+				TieCockpitRenderer_DrawDcFaces(cg, frame, effect->glow ? k_light : k_cover, &effect->faces, -1);
 		}
 }
 

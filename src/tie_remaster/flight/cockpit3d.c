@@ -34,6 +34,9 @@
 /* The cockpit takes no shadows (its own hull would black it out), so the
  * sun and sky reach it only weakly, as through the canopy frame. */
 #define TIE_FLIGHT_COCKPIT3D_WORLD_LIGHT 0.4f
+/* The gunboat's shell sits in shade the sun hardly reaches; TFTC shows it
+ * grey, so it gets an even fill light of this linear level. */
+#define TIE_FLIGHT_COCKPIT3D_GUNBOAT_FILL 0.35f
 
 static float s_cockpit3d_fov_deg = TIE_FLIGHT_COCKPIT3D_FOV_DEG;
 
@@ -639,6 +642,17 @@ void TieFlightCockpit3d_Submit(TieFlightRenderer* g, const TieSnapshot* curr, co
 	};
 	TieRenderMath_Mat4Multiply(transform, craft_transform, to_eye);
 	TieFlightCockpit3d_YokeTransform(g->cockpit3d_yoke, curr->cockpit.stick, transform, g->cockpit3d_yoke_transform);
+	/* A light at the eye with a long reach and no falloff to speak of: the
+	 * local-light term saturates, lighting every face evenly. */
+	static AeronSceneLightBlock fill;
+	fill.light_count = 1;
+	fill.lights[0] = (AeronSceneLightGPU) {
+		.pos = { cam_pos[0], cam_pos[1], cam_pos[2] },
+		.range = 480.0f,
+		.color = { TIE_FLIGHT_COCKPIT3D_GUNBOAT_FILL, TIE_FLIGHT_COCKPIT3D_GUNBOAT_FILL,
+				   TIE_FLIGHT_COCKPIT3D_GUNBOAT_FILL },
+		.falloff_sq = 1e12f,
+	};
 	for (uint32_t i = 0; i < g->cockpit3d_mesh_count; ++i) {
 		AeronSceneMeshInstance in;
 		memset(&in, 0, sizeof in);
@@ -650,6 +664,8 @@ void TieFlightCockpit3d_Submit(TieFlightRenderer* g, const TieSnapshot* curr, co
 		memcpy(in.prev_transform, placed, sizeof in.prev_transform);
 		in.zero_velocity = 1;
 		in.world_light_scale = TIE_FLIGHT_COCKPIT3D_WORLD_LIGHT;
+		if (strcmp(g->cockpit3d_model, "AssaultGunboatCockpit") == 0)
+			in.lights = &fill;
 		/* The hidden exterior hull still casts shadows and would black out
 		 * the interior, and the cockpit must not shadow the world. */
 		in.shadow_flags = AERON_SCENE_INSTANCE_NO_CAST_SHADOW | AERON_SCENE_INSTANCE_NO_RECEIVE_SHADOW;

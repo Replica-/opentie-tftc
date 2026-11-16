@@ -3506,6 +3506,27 @@ static void TieCockpitRenderer_DrawDcHologramPanel(AeronDrawList2D* list, float 
 	AeronDrawList_AddRRect(list, &glass);
 }
 
+/* A slight bevel round a text screen: a lit band inside its top edge, a
+ * shaded one inside its bottom, and a thin rim. It sits `inset` in from the
+ * target's edge, clear of the clamped edge texels. */
+static void TieCockpitRenderer_DrawDcBevel(AeronDrawList2D* list, float w, float h, float inset) {
+	const float band = fmaxf(fminf(w, h) * 0.022f, 2.0f);
+	AeronDrawList2DRRect bevel = {
+		.dst_x = inset,
+		.dst_y = inset,
+		.dst_w = w - 2.0f * inset,
+		.dst_h = h - 2.0f * inset,
+		.radius_px = fminf(w, h) * 0.06f,
+		.border_px = fmaxf(band * 0.35f, 1.0f),
+		.bevel_px = band,
+		.soft_px = 1.5f,
+		.border = { 0.075f, 0.08f, 0.09f, 1.0f },
+		.bevel_hi = { 0.05f, 0.053f, 0.06f, 0.6f },
+		.bevel_lo = { 0.0f, 0.0f, 0.0f, 0.55f },
+	};
+	AeronDrawList_AddRRect(list, &bevel);
+}
+
 /* True when instrument `id` is not drawn as itself on this cockpit: a DC
  * gauge stands in for it, or it belongs to a display the cockpit has no
  * screen for, which XWA leaves off the HUD too. */
@@ -4053,9 +4074,12 @@ static void TieCockpitRenderer_BeginDcSurfaces(TieCockpitRenderer* cg, const Tie
 			if (!surface)
 				continue;
 			/* XWA projects a hologram text box in the air; here it gets a screen. */
-			if (dc_screen->hologram &&
-				(dc_screen->source == TIE_DC_LEFT_TEXT || dc_screen->source == TIE_DC_RIGHT_TEXT))
-				TieCockpitRenderer_DrawDcHologramPanel(surface->list, (float)w, (float)h);
+			if (dc_screen->source == TIE_DC_LEFT_TEXT || dc_screen->source == TIE_DC_RIGHT_TEXT) {
+				if (dc_screen->hologram)
+					TieCockpitRenderer_DrawDcHologramPanel(surface->list, (float)w, (float)h);
+				TieCockpitRenderer_DrawDcBevel(surface->list, (float)w, (float)h,
+											   dc_screen->hologram ? 3.0f : fminf((float)w, (float)h) * 0.025f);
+			}
 			cg->dc_hologram = dc_screen->hologram;
 			TieCockpitRenderer_DrawDcGauge(cg, surface, entry, dc_screen->source, occurrence, snap);
 			cg->dc_hologram = false;
@@ -4245,19 +4269,20 @@ static void TieCockpitRenderer_DrawDcScreen(TieCockpitRenderer* cg, const struct
 											const TieDcScreen* dc_screen) {
 	const float b = surface->brightness, tint[4] = { b, b, b, b };
 	if (dc_screen->pinned[2] > dc_screen->pinned[0]) {
-		/* Pinned to the view: its outer edge a little shorter, as if turned
-		 * in toward the middle. */
+		/* Pinned to the view: its outer edge shorter, as if turned in toward
+		 * the middle. The outer edge is the farther one, its clip W larger
+		 * by the ratio of the edges, so the text stays straight across. */
 		const TieCockpitRendererDrawSpace* view = &cg->pending_space;
 		const float x0 = dc_screen->pinned[0] * (float)view->target_w, x1 = dc_screen->pinned[2] * (float)view->target_w;
 		const float y0 = dc_screen->pinned[1] * (float)view->target_h, y1 = dc_screen->pinned[3] * (float)view->target_h;
 		const bool left = (x0 + x1) < (float)view->target_w;
-		const float inset = (y1 - y0) * 0.05f, q = 0.9f;
+		const float inset = (y1 - y0) * 0.09f, q = 1.0f - 2.0f * 0.09f;
 		AeronDrawList2DQuad4 quad = {
 			.texture = Aeron_RenderTargetGetTexture(surface->rt),
 			.tint = { tint[0], tint[1], tint[2], tint[3] },
 			.blend = AERON_BLIT2D_BLEND_PMA,
 			.filter = AERON_BLIT2D_FILTER_LINEAR,
-			.q = { left ? q : 1.0f, left ? 1.0f : q, left ? q : 1.0f, left ? 1.0f : q },
+			.q = { left ? 1.0f : q, left ? q : 1.0f, left ? 1.0f : q, left ? q : 1.0f },
 			.corners = {
 				{ x0, y0 + (left ? inset : 0.0f), 0.0f, 0.0f },
 				{ x1, y0 + (left ? 0.0f : inset), 1.0f, 0.0f },

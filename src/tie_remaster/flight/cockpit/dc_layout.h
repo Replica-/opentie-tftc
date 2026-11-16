@@ -63,6 +63,7 @@ typedef struct TieDcScreen {
 	TieDcTriangle* triangles;
 	int triangle_count;
 	float aspect; /* width / height of the display on the model */
+	bool hologram; /* XWA projects it in the air, over a plain panel: hologram = 1 */
 } TieDcScreen;
 
 #define TIE_DC_MAX_SCREENS 32

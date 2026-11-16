@@ -220,6 +220,7 @@ bool TieDcLayout_Build(const char* source_text, const opt_file_t* opt, TieDcLayo
 
 	int texture = -1;
 	float cover_w = 0.0f, cover_h = 0.0f;
+	bool hologram = false;
 	for (char* line = strtok(text, "\n"); line; line = strtok(NULL, "\n")) {
 		char* comment = strchr(line, ';');
 		if (comment)
@@ -232,6 +233,7 @@ bool TieDcLayout_Build(const char* source_text, const opt_file_t* opt, TieDcLayo
 			texture = comma && close && close > comma
 						  ? TieDcLayout_FindTexture(opt, comma + 1, (size_t)(close - comma - 1))
 						  : -1;
+			hologram = false;
 			continue;
 		}
 		char* equals = strchr(line, '=');
@@ -242,6 +244,8 @@ bool TieDcLayout_Build(const char* source_text, const opt_file_t* opt, TieDcLayo
 		char* value = TieDcLayout_Trim(equals + 1);
 		if (strcmp(key, "xwahacker_fov") == 0) {
 			out->fov_deg = strtof(value, NULL);
+		} else if (strcmp(key, "hologram") == 0) {
+			hologram = atoi(value) != 0;
 		} else if (strcmp(key, "cover_texture_size") == 0) {
 			sscanf(value, "%f , %f", &cover_w, &cover_h);
 		} else if (strcmp(key, "uv_coords") == 0 && texture >= 0 && cover_w > 0.0f && cover_h > 0.0f) {
@@ -264,6 +268,7 @@ bool TieDcLayout_Build(const char* source_text, const opt_file_t* opt, TieDcLayo
 			memset(screen, 0, sizeof *screen);
 			if (TieDcLayout_Place(opt, texture, x0 / cover_w, y0 / cover_h, x1 / cover_w, y1 / cover_h, screen)) {
 				screen->source = source;
+				screen->hologram = hologram;
 				++out->count;
 			} else {
 				free(screen->triangles);

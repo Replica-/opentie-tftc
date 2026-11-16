@@ -85,13 +85,16 @@ static void TieFlightCockpit3d_LoadEye(TieFlightRenderer* g, const char* model) 
 	pov[1] = -pov[1];
 	/* TFTC's assault gunboat and missile boat cockpits sit further from the
 	 * eye than their .ini POV puts them (which would hang the missile boat's
-	 * 3 m up): these eyes put their targeting screens where TFTC shows them. */
+	 * 3 m up): these eyes put their targeting screens where TFTC shows them.
+	 * The TIE Avenger's eye sits 12 cm behind its POV, which crowds its
+	 * console a little. */
 	static const struct {
 		const char* model;
 		float eye[3];
 	} k_eyes[] = {
 		{ "AssaultGunboatCockpit", { 0.0f, -43.0f, 14.0f } },
 		{ "MissileBoatCockpit", { 0.0f, -131.0f, 18.0f } },
+		{ "TieAvengerCockpit", { 0.0f, 8.0f, 3.0f } },
 	};
 	for (size_t i = 0; i < sizeof k_eyes / sizeof k_eyes[0]; ++i)
 		if (strcmp(k_eyes[i].model, model) == 0)

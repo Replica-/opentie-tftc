@@ -3673,20 +3673,24 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 		return;
 	}
 	if (source == TIE_DC_LASERS) {
-		/* XWA's charge bar: a row of glowing dashes per cannon on its side,
-		 * the left cannons (even slots) on the first bar and the right on
-		 * the second, on a dark backing with white ends; lasers green, ion
-		 * cannons blue, later slots higher up (the TIE Defender's ions on
-		 * top). panel_updatelasers: value = lit LEDs 0..10 for weapon slot
-		 * (instrument - 3); color 0 = uncharged. */
-		TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, w, h, 0.004f, 0.015f, 0.006f, 1.0f);
+		/* XWA's charge bar: a thin line of glowing dashes per cannon on its
+		 * side, the left cannons (even slots) on the first bar and the right
+		 * on the second, on a near-black backing with white ends; lasers
+		 * green, ion cannons blue, later slots higher up (the TIE Defender's
+		 * ions on top). A line drains as its cannon fires and recharges.
+		 * panel_updatelasers: value = lit LEDs 0..10 for weapon slot
+		 * (instrument - 3); color 1 = normal charge, 2 = overcharge (the 10
+		 * normal LEDs full, `value` of the 10 over them), 0 = no charge. The
+		 * glowing red dot beside a line marks the cannon that fires next: its
+		 * fire-status lever (instrument 37 + slot) reads 3. */
+		TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, w, h, 0.001f, 0.0015f, 0.003f, 1.0f);
 		const float tick = fmaxf(w * 0.008f, 1.5f);
-		TieCockpitRenderer_DcFill(surface->list, w * 0.02f, h * 0.15f, tick, h * 0.7f, 0.85f, 0.85f, 0.85f, 1.0f);
-		TieCockpitRenderer_DcFill(surface->list, w * 0.98f - tick, h * 0.15f, tick, h * 0.7f, 0.85f, 0.85f, 0.85f, 1.0f);
+		TieCockpitRenderer_DcFill(surface->list, w * 0.02f, h * 0.15f, tick, h * 0.7f, 0.55f, 0.55f, 0.55f, 1.0f);
+		TieCockpitRenderer_DcFill(surface->list, w * 0.98f - tick, h * 0.15f, tick, h * 0.7f, 0.55f, 0.55f, 0.55f, 1.0f);
 		const int cannons = snap->hud.weapon_group_cnt < 1 ? 1 : snap->hud.weapon_group_cnt > 8 ? 8 : snap->hud.weapon_group_cnt;
 		const int side = cannons >= 2 ? (occurrence & 1) : 0, rows = (cannons + 1) / 2;
-		const float left = w * 0.05f, step = (w * 0.90f) / 10.0f, pitch = h * 0.6f / (float)rows;
-		const float dash_h = pitch * (rows == 1 ? 0.37f : 0.55f);
+		const float left = w * 0.06f, step = (w * 0.76f) / 6.0f, pitch = h * 0.78f / (float)rows;
+		const float dash_h = fmaxf(pitch * (rows == 1 ? 0.16f : 0.17f), 1.5f);
 		for (int row = 0; row < rows; ++row) {
 			const int slot = side + row * 2;
 			if (slot >= cannons)
@@ -3694,15 +3698,35 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 			const TieHudInstrument* ins = &snap->hud.instruments[TIE_HUDI_LASER_LED_FIRST + slot];
 			if (!TieCockpitCommon_InstrumentActive(ins))
 				continue;
-			const int lit = ins->color != 0 ? (ins->value < 0 ? 0 : ins->value > 10 ? 10 : ins->value) : 0;
+			const int leds = ins->value < 0 ? 0 : ins->value > 10 ? 10 : ins->value;
+			const int charge = ins->color == 2 ? 10 + leds : ins->color != 0 ? leds : 0; /* 0..20 */
+			const float lit = (float)charge * 6.0f / 20.0f;                             /* dashes, 0..6 */
 			const bool ion = (snap->hud.weapon_ion_mask >> slot) & 1u;
-			const float r = ion ? 0.15f : 0.1f, g = ion ? 0.45f : 1.0f, b = ion ? 1.0f : 0.1f;
-			const float y = h * 0.2f + pitch * ((float)(rows - 1 - row) + 0.5f) - dash_h * 0.5f;
-			for (int i = 0; i < lit; ++i) {
-				const float x = left + step * (float)i;
-				TieCockpitRenderer_DcFill(surface->list, x, y - dash_h * 0.4f, step * 0.94f, dash_h * 1.8f, r * 0.6f,
-										  g * 0.6f, b * 0.6f, 0.2f);
-				TieCockpitRenderer_DcFill(surface->list, x, y, step * 0.88f, dash_h, r, g, b, 1.0f);
+			const float r = ion ? 0.3f : 0.08f, g = ion ? 0.3f : 1.0f, b = ion ? 1.0f : 0.08f;
+			const float cy = h * 0.11f + pitch * ((float)(rows - 1 - row) + 0.5f), y = cy - dash_h * 0.5f;
+			for (int i = 0; i < 6 && (float)i < lit; ++i) {
+				const float part = fminf(lit - (float)i, 1.0f), x = left + step * (float)i;
+				TieCockpitRenderer_DcFill(surface->list, x, y - dash_h, step * 0.9f * part, dash_h * 3.0f, r * 0.5f,
+										  g * 0.5f, b * 0.5f, 0.12f);
+				TieCockpitRenderer_DcFill(surface->list, x, y, step * 0.86f * part, dash_h, r, g, b, 1.0f);
+			}
+			const TieHudInstrument* lever = &snap->hud.instruments[TIE_HUDI_WEAPON_FIRE_FIRST + slot];
+			if (TieCockpitCommon_InstrumentActive(lever) && lever->value == 3) {
+				const float dot = fminf(pitch * 0.5f, w * 0.03f), dx = left + step * 6.0f + w * 0.06f;
+				AeronDrawList2DRRect glow = {
+					.dst_x = dx - dot * 1.4f, .dst_y = cy - dot * 1.4f, .dst_w = dot * 2.8f, .dst_h = dot * 2.8f,
+					.radius_px = dot * 1.4f, .soft_px = dot,
+					.fill_top = { 1.0f * 0.45f, 0.12f * 0.45f, 0.0f, 0.45f },
+					.fill_bottom = { 1.0f * 0.45f, 0.12f * 0.45f, 0.0f, 0.45f },
+				};
+				AeronDrawList_AddRRect(surface->list, &glow);
+				AeronDrawList2DRRect core = {
+					.dst_x = dx - dot * 0.6f, .dst_y = cy - dot * 0.6f, .dst_w = dot * 1.2f, .dst_h = dot * 1.2f,
+					.radius_px = dot * 0.6f, .soft_px = 1.0f,
+					.fill_top = { 1.0f, 0.55f, 0.12f, 1.0f },
+					.fill_bottom = { 1.0f, 0.25f, 0.02f, 1.0f },
+				};
+				AeronDrawList_AddRRect(surface->list, &core);
 			}
 		}
 		return;

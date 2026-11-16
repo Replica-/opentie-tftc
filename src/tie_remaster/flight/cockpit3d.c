@@ -286,25 +286,34 @@ static char* TieFlightCockpit3d_CoverLines(const char* dc_text) {
 	return out;
 }
 
-/* The missile boat's hologram text boxes crowd its console: each is made a
- * tenth wider and moved out from the middle by a tenth of its width. */
-static void TieFlightCockpit3d_SpreadHolograms(TieDcLayout* dc) {
-	for (int s = 0; s < dc->count; ++s) {
+/* Where the gunboat's and missile boat's hologram text boxes sit on screen:
+ * fractions of the view from its top-left, for the radio box (left) and the
+ * goals box (right). TFTC floats them low over the console at a steep
+ * angle, half out of view; here they are pinned to the view, turned in a
+ * little toward the middle. */
+typedef struct TieFlightCockpit3dHologramPlace {
+	const char* model;
+	float left[4], right[4]; /* x0, y0, x1, y1 */
+} TieFlightCockpit3dHologramPlace;
+
+static const TieFlightCockpit3dHologramPlace k_hologram_places[] = {
+	{ "AssaultGunboatCockpit", { 0.02f, 0.71f, 0.245f, 0.975f }, { 0.757f, 0.71f, 0.975f, 0.975f } },
+	{ "MissileBoatCockpit", { 0.19f, 0.765f, 0.39f, 0.975f }, { 0.635f, 0.765f, 0.84f, 0.975f } },
+};
+
+/* Pins each hologram text box of `model` to its place on screen. */
+static void TieFlightCockpit3d_PlaceHolograms(TieDcLayout* dc, const char* model) {
+	const TieFlightCockpit3dHologramPlace* place = NULL;
+	for (size_t i = 0; i < sizeof k_hologram_places / sizeof k_hologram_places[0]; ++i)
+		if (strcmp(k_hologram_places[i].model, model) == 0)
+			place = &k_hologram_places[i];
+	for (int s = 0; place && s < dc->count; ++s) {
 		TieDcScreen* screen = &dc->screens[s];
-		if (!screen->hologram || screen->triangle_count <= 0)
+		if (!screen->hologram || (screen->source != TIE_DC_LEFT_TEXT && screen->source != TIE_DC_RIGHT_TEXT))
 			continue;
-		float lo = 1e30f, hi = -1e30f;
-		for (int t = 0; t < screen->triangle_count; ++t)
-			for (int c = 0; c < 3; ++c) {
-				lo = fminf(lo, screen->triangles[t].position[c][0]);
-				hi = fmaxf(hi, screen->triangles[t].position[c][0]);
-			}
-		const float centre = (lo + hi) * 0.5f, shift = (centre < 0.0f ? -0.1f : 0.1f) * (hi - lo);
-		for (int t = 0; t < screen->triangle_count; ++t)
-			for (int c = 0; c < 3; ++c) {
-				float* x = &screen->triangles[t].position[c][0];
-				*x = centre + shift + (*x - centre) * 1.1f;
-			}
+		const float* box = screen->source == TIE_DC_LEFT_TEXT ? place->left : place->right;
+		memcpy(screen->pinned, box, sizeof screen->pinned);
+		screen->aspect = ((box[2] - box[0]) * 16.0f) / ((box[3] - box[1]) * 9.0f);
 	}
 }
 
@@ -475,16 +484,19 @@ static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cm
 			memcpy(dc_text, dc_bytes, dc_size);
 			dc_text[dc_size] = '\0';
 			g->cockpit3d_dc_loaded = TieDcLayout_Build(dc_text, &shown, &g->cockpit3d_dc);
-			/* The TIE cockpits' targeting glass reaches below the .dc's display. */
-			for (int s = 0; strncmp(model, "Tie", 3) == 0 && s < g->cockpit3d_dc.count; ++s)
-				if (g->cockpit3d_dc.screens[s].source == TIE_DC_TARGETING)
-					TieDcLayout_ExtendDown(&g->cockpit3d_dc.screens[s], &shown, 0.15f);
+			/* On the TIE cockpits the targeting glass reaches below the .dc's
+			 * display, and the goals panel to its right. */
+			for (int s = 0; strncmp(model, "Tie", 3) == 0 && s < g->cockpit3d_dc.count; ++s) {
+				TieDcScreen* screen = &g->cockpit3d_dc.screens[s];
+				if (screen->source == TIE_DC_TARGETING)
+					TieDcLayout_Extend(screen, &shown, 0.0f, 0.15f);
+				else if (screen->source == TIE_DC_RIGHT_TEXT && !screen->hologram)
+					TieDcLayout_Extend(screen, &shown, 0.22f, 0.0f);
+			}
 			cover_text = TieFlightCockpit3d_CoverLines(dc_text);
 			free(dc_text);
 			for (int s = 0; shown_meshes && s < g->cockpit3d_dc.count; ++s)
 				TieFlightCockpit3d_RemapMeshes(&g->cockpit3d_dc.screens[s], hidden, hidden_count, total);
-			if (strcmp(model, "MissileBoatCockpit") == 0)
-				TieFlightCockpit3d_SpreadHolograms(&g->cockpit3d_dc);
 		}
 		free(dc_bytes);
 		Aeron_LogInfo("tie.cockpit3d", "%s: %d HUD screens", dc_path,
@@ -520,6 +532,8 @@ static void TieFlightCockpit3d_Load(TieFlightRenderer* g, AeronCommandBuffer* cm
 	}
 	free(cover_text);
 	TieFlightCockpit3d_LoadEye(g, model);
+	if (g->cockpit3d_dc_loaded)
+		TieFlightCockpit3d_PlaceHolograms(&g->cockpit3d_dc, model);
 	free(shown_meshes);
 	opt_free(opt);
 

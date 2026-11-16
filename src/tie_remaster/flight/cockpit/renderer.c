@@ -4196,6 +4196,30 @@ static void TieCockpitRenderer_DrawDcFaces(TieCockpitRenderer* cg, AeronTexture*
 static void TieCockpitRenderer_DrawDcScreen(TieCockpitRenderer* cg, const struct TieCockpitRendererSurface* surface,
 											const TieDcScreen* dc_screen) {
 	const float b = surface->brightness, tint[4] = { b, b, b, b };
+	if (dc_screen->pinned[2] > dc_screen->pinned[0]) {
+		/* Pinned to the view: its outer edge a little shorter, as if turned
+		 * in toward the middle. */
+		const TieCockpitRendererDrawSpace* view = &cg->pending_space;
+		const float x0 = dc_screen->pinned[0] * (float)view->target_w, x1 = dc_screen->pinned[2] * (float)view->target_w;
+		const float y0 = dc_screen->pinned[1] * (float)view->target_h, y1 = dc_screen->pinned[3] * (float)view->target_h;
+		const bool left = (x0 + x1) < (float)view->target_w;
+		const float inset = (y1 - y0) * 0.05f, q = 0.9f;
+		AeronDrawList2DQuad4 quad = {
+			.texture = Aeron_RenderTargetGetTexture(surface->rt),
+			.tint = { tint[0], tint[1], tint[2], tint[3] },
+			.blend = AERON_BLIT2D_BLEND_PMA,
+			.filter = AERON_BLIT2D_FILTER_LINEAR,
+			.q = { left ? q : 1.0f, left ? 1.0f : q, left ? q : 1.0f, left ? 1.0f : q },
+			.corners = {
+				{ x0, y0 + (left ? inset : 0.0f), 0.0f, 0.0f },
+				{ x1, y0 + (left ? 0.0f : inset), 1.0f, 0.0f },
+				{ x0, y1 - (left ? inset : 0.0f), 0.0f, 1.0f },
+				{ x1, y1 - (left ? 0.0f : inset), 1.0f, 1.0f },
+			},
+		};
+		AeronDrawList_AddQuad4(cg->record_list, &quad);
+		return;
+	}
 	TieCockpitRenderer_DrawDcFaces(cg, Aeron_RenderTargetGetTexture(surface->rt), tint, dc_screen);
 }
 

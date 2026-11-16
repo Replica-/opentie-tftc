@@ -285,11 +285,12 @@ bool TieDcLayout_Build(const char* source_text, const opt_file_t* opt, TieDcLayo
 	return out->count > 0;
 }
 
-void TieDcLayout_ExtendDown(TieDcScreen* screen, const opt_file_t* opt, float fraction) {
+void TieDcLayout_Extend(TieDcScreen* screen, const opt_file_t* opt, float right, float down) {
 	TieDcScreen placed = *screen;
 	placed.triangles = NULL;
 	placed.triangle_count = 0;
-	placed.v1 = screen->v1 + (screen->v1 - screen->v0) * fraction;
+	placed.u1 = screen->u1 + (screen->u1 - screen->u0) * right;
+	placed.v1 = screen->v1 + (screen->v1 - screen->v0) * down;
 	if (!TieDcLayout_Place(opt, screen->texture, placed.u0, placed.v0, placed.u1, placed.v1, &placed)) {
 		free(placed.triangles);
 		return;

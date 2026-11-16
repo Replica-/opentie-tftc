@@ -68,6 +68,9 @@ typedef struct TieDcScreen {
 	 * texture coordinates of its top-left and bottom-right. */
 	int texture;
 	float u0, v0, u1, v1;
+	/* A screen pinned to the view rather than laid on its faces: x0, y0, x1,
+	 * y1 as fractions of the view from its top-left (x1 > x0 when set). */
+	float pinned[4];
 } TieDcScreen;
 
 #define TIE_DC_MAX_SCREENS 32
@@ -88,11 +91,11 @@ void TieDcLayout_Free(TieDcLayout* layout);
  * texture itself: display coordinates are the faces' texture coordinates.
  * False when the texture has no faces. Free the triangles with free(). */
 bool TieDcLayout_PlaceTexture(const opt_file_t* opt, const char* name, TieDcScreen* out);
-/* Moves `screen`'s bottom edge down its texture by `fraction` of its
- * height and lays it on `opt` again (the model it was built from), for a
- * screen whose glass reaches past the .dc's display. Its triangles' meshes
- * index `opt` again afterwards. */
-void TieDcLayout_ExtendDown(TieDcScreen* screen, const opt_file_t* opt, float fraction);
+/* Moves `screen`'s right and bottom edges along its texture by `right` of
+ * its width and `down` of its height and lays it on `opt` again (the model
+ * it was built from), for a screen whose glass reaches past the .dc's
+ * display. Its triangles' meshes index `opt` again afterwards. */
+void TieDcLayout_Extend(TieDcScreen* screen, const opt_file_t* opt, float right, float down);
 
 /* The DC source a TIE HUD instrument (or cockpit editor panel id) belongs to. */
 TieDcSource TieDcLayout_SourceOf(int instrument_id);

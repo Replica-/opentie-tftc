@@ -4161,14 +4161,11 @@ static void TieCockpitRenderer_BeginDcSurfaces(TieCockpitRenderer* cg, const Tie
 				continue;
 			/* XWA projects a hologram text box in the air; here it gets a screen. */
 			if (dc_screen->source == TIE_DC_LEFT_TEXT || dc_screen->source == TIE_DC_RIGHT_TEXT) {
-				/* The TIE Avenger's screens are plain rectangles. */
-				const char* model = cg->flight_gpu ? TieFlightRenderer_Cockpit3dModel(cg->flight_gpu) : NULL;
-				const float radius =
-					model && strcmp(model, "TieAvengerCockpit") == 0 ? 0.0f : fminf((float)w, (float)h) * 0.06f;
-				if (dc_screen->hologram)
+				const float radius = fminf((float)w, (float)h) * 0.06f;
+				if (dc_screen->hologram) {
 					TieCockpitRenderer_DrawDcHologramPanel(surface->list, (float)w, (float)h, radius);
-				TieCockpitRenderer_DrawDcBevel(surface->list, (float)w, (float)h,
-											   dc_screen->hologram ? 3.0f : fminf((float)w, (float)h) * 0.025f, radius);
+					TieCockpitRenderer_DrawDcBevel(surface->list, (float)w, (float)h, 3.0f, radius);
+				}
 			}
 			cg->dc_hologram = dc_screen->hologram;
 			TieCockpitRenderer_DrawDcGauge(cg, surface, entry, dc_screen->source, occurrence, snap);
@@ -4393,9 +4390,9 @@ static void TieCockpitRenderer_DrawDcScreen(TieCockpitRenderer* cg, const struct
 											const TieDcScreen* dc_screen) {
 	const float b = surface->brightness, tint[4] = { b, b, b, b };
 	if (dc_screen->pinned[2] > dc_screen->pinned[0]) {
-		/* Pinned to the view: its outer edge shorter, as if turned in toward
-		 * the middle. The outer edge is the farther one, its clip W larger
-		 * by the ratio of the edges, so the text stays straight across. */
+		/* Pinned to the view: its inner edge shorter, as if turned to face
+		 * the pilot. The inner edge is the farther one, its clip W larger by
+		 * the ratio of the edges, so the text stays straight across. */
 		const TieCockpitRendererDrawSpace* view = &cg->pending_space;
 		const float x0 = dc_screen->pinned[0] * (float)view->target_w, x1 = dc_screen->pinned[2] * (float)view->target_w;
 		const float y0 = dc_screen->pinned[1] * (float)view->target_h, y1 = dc_screen->pinned[3] * (float)view->target_h;
@@ -4406,27 +4403,14 @@ static void TieCockpitRenderer_DrawDcScreen(TieCockpitRenderer* cg, const struct
 			.tint = { tint[0], tint[1], tint[2], tint[3] },
 			.blend = AERON_BLIT2D_BLEND_PMA,
 			.filter = AERON_BLIT2D_FILTER_LINEAR,
-			.q = { left ? 1.0f : q, left ? q : 1.0f, left ? 1.0f : q, left ? q : 1.0f },
+			.q = { left ? q : 1.0f, left ? 1.0f : q, left ? q : 1.0f, left ? 1.0f : q },
 			.corners = {
-				{ x0, y0 + (left ? inset : 0.0f), 0.0f, 0.0f },
-				{ x1, y0 + (left ? 0.0f : inset), 1.0f, 0.0f },
-				{ x0, y1 - (left ? inset : 0.0f), 0.0f, 1.0f },
-				{ x1, y1 - (left ? 0.0f : inset), 1.0f, 1.0f },
+				{ x0, y0 + (left ? 0.0f : inset), 0.0f, 0.0f },
+				{ x1, y0 + (left ? inset : 0.0f), 1.0f, 0.0f },
+				{ x0, y1 - (left ? 0.0f : inset), 0.0f, 1.0f },
+				{ x1, y1 - (left ? inset : 0.0f), 1.0f, 1.0f },
 			},
 		};
-		/* The TIE Avenger's stay rectangles, tilted inner side up, as XWA
-		 * angles its text toward the middle. */
-		const char* model = cg->flight_gpu ? TieFlightRenderer_Cockpit3dModel(cg->flight_gpu) : NULL;
-		if (model && strcmp(model, "TieAvengerCockpit") == 0) {
-			const float tilt = (left ? -4.5f : 4.5f) * 3.14159265f / 180.0f, c = cosf(tilt), s = sinf(tilt);
-			const float cx = (x0 + x1) * 0.5f, cy = (y0 + y1) * 0.5f, fit = 0.96f;
-			for (int k = 0; k < 4; ++k) {
-				const float dx = ((k & 1) ? x1 - cx : x0 - cx) * fit, dy = ((k & 2) ? y1 - cy : y0 - cy) * fit;
-				quad.corners[k][0] = cx + dx * c - dy * s;
-				quad.corners[k][1] = cy + dx * s + dy * c;
-				quad.q[k] = 1.0f;
-			}
-		}
 		AeronDrawList_AddQuad4(cg->record_list, &quad);
 		return;
 	}

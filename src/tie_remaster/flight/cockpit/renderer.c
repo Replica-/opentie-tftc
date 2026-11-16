@@ -3783,18 +3783,24 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 			const TieHudInstrument* ins = &snap->hud.instruments[TIE_HUDI_LASER_LED_FIRST + slot];
 			if (!TieCockpitCommon_InstrumentActive(ins))
 				continue;
+			/* TFTC's two shades: the normal charge fills the dashes dull, the
+			 * overcharge brightens them again from the left. */
 			const int leds = ins->value < 0 ? 0 : ins->value > 10 ? 10 : ins->value;
-			const int charge = ins->color == 2 ? 10 + leds : ins->color != 0 ? leds : 0; /* 0..20 */
-			const float lit = (float)charge * 6.0f / 20.0f;                             /* dashes, 0..6 */
+			const float lit = (float)(ins->color == 2 ? 10 : ins->color != 0 ? leds : 0) * 6.0f / 10.0f;
+			const float bright = (float)(ins->color == 2 ? leds : 0) * 6.0f / 10.0f;
 			const bool ion = (snap->hud.weapon_ion_mask >> slot) & 1u;
 			const float r = ion ? 0.3f : 0.08f, g = ion ? 0.3f : 1.0f, b = ion ? 1.0f : 0.08f;
 			const float cy = h * 0.11f + pitch * ((float)(rows - 1 - row) + 0.5f), y = cy - dash_h * 0.5f;
 			for (int i = 0; i < 6 && (float)i < lit; ++i) {
 				const float part = fminf(lit - (float)i, 1.0f), x = left + step * (float)i;
-				if (glow)
-					TieCockpitRenderer_DcFill(surface->list, x, y - dash_h, step * 0.9f * part, dash_h * 3.0f, r * 0.5f,
+				const float over = fminf(fmaxf(bright - (float)i, 0.0f), 1.0f), dull = 0.35f;
+				if (glow && over > 0.0f)
+					TieCockpitRenderer_DcFill(surface->list, x, y - dash_h, step * 0.9f * over, dash_h * 3.0f, r * 0.5f,
 											  g * 0.5f, b * 0.5f, 0.12f);
-				TieCockpitRenderer_DcFill(surface->list, x, y, step * 0.86f * part, dash_h, r, g, b, 1.0f);
+				TieCockpitRenderer_DcFill(surface->list, x, y, step * 0.86f * part, dash_h, r * dull, g * dull, b * dull,
+										  1.0f);
+				if (over > 0.0f)
+					TieCockpitRenderer_DcFill(surface->list, x, y, step * 0.86f * over, dash_h, r, g, b, 1.0f);
 			}
 			const TieHudInstrument* lever = &snap->hud.instruments[TIE_HUDI_WEAPON_FIRE_FIRST + slot];
 			if (TieCockpitCommon_InstrumentActive(lever) && lever->value == 3) {

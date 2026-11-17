@@ -4,6 +4,7 @@
 #include "tie_remaster/flight/billboards.h"
 #include "tie_remaster/flight/classic_draw.h"
 #include "tie_remaster/flight/cockpit/renderer.h"
+#include "tie_remaster/flight/hyperspace.h"
 #include "tie_remaster/flight/hyperstars.h"
 #include "tie_remaster/flight/line_draw.h"
 #include "tie_remaster/flight/mesh_common.h"
@@ -40,6 +41,26 @@
 
 #define TIE_FLIGHT_DEEP_SPACE_PALETTE_INDEX 0xFBu
 #define TIE_FLIGHT_MB_REFERENCE_FRAME_US 32000u
+
+/* TIE's hyperspace clock (anim_dohyperspace): 236 ticks a second. Phase 3,
+ * the jump, runs from 1180 to 1652; phase 4, the outside view of the craft
+ * in hyperspace, to 1888; phase 5, the cockpit again, to 2360. Phase 5
+ * holds the streaks until 2124, then pulls them back. */
+#define TIE_FLIGHT_HYPER_JUMP_START 1180u
+#define TIE_FLIGHT_HYPER_OUTSIDE_START 1652u
+#define TIE_FLIGHT_HYPER_EXIT_START 2124u
+/* OpenXWA's entry is 590 ticks long; TIE's jump is 472, so the entry plays
+ * faster. The tunnel runs from phase 4 into phase 5 until the exit, which is
+ * as long as OpenXWA's. */
+#define TIE_FLIGHT_HYPER_ENTRY_SCALE (590.0f / 472.0f)
+#define TIE_FLIGHT_HYPER_TUNNEL_TICKS 472.0f
+/* The scene warp leaves everything nearer than this in place: the cockpit
+ * and the player's craft are all that is left in hyperspace. */
+#define TIE_FLIGHT_HYPER_KEEP_DISTANCE_M 100.0f
+/* The hyperspace's light on the craft, as a factor of OpenXWA's. TIE's
+ * scene has no exposure that opens up in the dark tunnel, and its cockpits
+ * are dim grey, so the tunnel needs more light to show on them. */
+#define TIE_FLIGHT_HYPER_CRAFT_LIGHT 4.0f
 
 /* Round a float viewport rect to the HAL's integer viewport. */
 static AeronRectI TieFlightPasses_ViewportRect(float x, float y, float w, float h) {
@@ -269,6 +290,12 @@ int TieFlightRenderer_CmpDrawKey(const void* a, const void* b) {
 static AeronTexture* TieFlightRenderer_SelectSkyboxCube(TieFlightRenderer* g, const TieSnapshot* curr) {
 	/* A TFTC mission skybox replaces the configured one. */
 	AeronTexture* cube = g->tftc_skybox ? g->tftc_skybox : g->skybox_cube;
+	/* OpenXWA's hyperspace warps the sky on the way in and out, and covers
+	 * it with the tunnel in between. */
+	if (g->frame.hyperspace_tunnel)
+		return NULL;
+	if (g->frame.hyperspace_warp)
+		return cube;
 	/* Per-phase cubemap selection:
 	 *   phase 3/5  cockpit-view streak phases — no skybox (engine
 	 *              gates rtsvga2_drawstars off here).
@@ -316,8 +343,10 @@ static void TieFlightRenderer_SceneHookBeforeOpaque(AeronCommandBuffer* cmd, Aer
 	/* Backdrop planets follow as batched SKY scene billboards, drawn
 	 * by the scene right after this hook returns. */
 
-	(void)rt_w;
-	(void)rt_h;
+	if (fr->hyperspace_tunnel) {
+		TIE_GPU_MARKER(cmd, "Hyperspace tunnel");
+		TieFlightHyperspace_Draw(cmd, pass, rt_w, rt_h, g->hyperspace);
+	}
 
 	if (fr->stars_ready) {
 		float sky_view_proj[16];
@@ -366,10 +395,207 @@ static void TieFlightRenderer_SceneHookAfterUpscale(AeronCommandBuffer* cmd, Aer
 	const TieFlightSceneFrame* fr = &g->frame;
 	if (!fr->curr || !pass)
 		return;
-	if (g->cockpit) {
+	/* The scene warp would move the cockpit with the sky behind it: it is
+	 * drawn over the warped scene instead (TieFlightRenderer_RenderHyperspaceWarp). */
+	if (g->cockpit && !fr->hyperspace_warp) {
 		TIE_GPU_MARKER(cmd, "Cockpit and flight HUD");
 		TieCockpitRenderer_RenderInPass(g->cockpit, cmd, pass, AeronScene_SceneRt(g->scene), fr->curr);
 	}
+}
+
+/* The seed of the jump's stars: each battle and each direction gets its
+ * own. */
+static uint32_t TieFlightRenderer_HyperspaceSeed(const TieSnapshot* curr, uint8_t phase) {
+	uint32_t seed = ((uint32_t)curr->battle_id + 1u) * 0x9e3779b1u;
+	if (phase == TIE_FLIGHT_HYPERSPACE_INBOUND)
+		seed ^= 0x85ebca6bu;
+	return seed;
+}
+
+/* The hyperspace clock, carried on between the sim's ticks by the host's
+ * clock, by no more than the last tick added, so the tunnel and the streaks
+ * move every frame. */
+static float TieFlightRenderer_HyperspaceTicks(TieFlightRenderer* g, const TieSnapshot* curr,
+											   uint64_t host_time_us) {
+	const uint16_t ticks = curr->hyperspace.hyperticks;
+	if (ticks != g->hyperspace_ticks) {
+		const int step = (int)ticks - (int)g->hyperspace_ticks;
+		g->hyperspace_ticks_step = step > 0 && step < 64 ? (uint16_t)step : 0;
+		g->hyperspace_ticks = ticks;
+		g->hyperspace_ticks_host_us = host_time_us;
+	}
+	float extra = host_time_us > g->hyperspace_ticks_host_us
+					  ? (float)(host_time_us - g->hyperspace_ticks_host_us) * 236.0e-6f
+					  : 0.0f;
+	if (extra > (float)g->hyperspace_ticks_step)
+		extra = (float)g->hyperspace_ticks_step;
+	return (float)ticks + extra;
+}
+
+/* The moment of OpenXWA's hyperspace that TIE's jump is at. Returns 0 when
+ * it draws nothing: outside the jump, in phase 2 (one tick) and in phase 6,
+ * the arrival seen from outside. */
+static int TieFlightRenderer_HyperspaceMoment(TieFlightRenderer* g, const TieSnapshot* curr,
+											  uint64_t host_time_us, TieFlightHyperspaceMoment* out) {
+	memset(out, 0, sizeof *out);
+	const uint8_t phase = curr->hyperspace.phase;
+	if (phase < 3 || phase > 5)
+		return 0;
+	const float ticks = TieFlightRenderer_HyperspaceTicks(g, curr, host_time_us);
+	out->tunnel_ticks = TIE_FLIGHT_HYPER_TUNNEL_TICKS;
+	out->look = -1;
+	if (phase == 3) {
+		out->phase = TIE_FLIGHT_HYPERSPACE_OUTBOUND;
+		out->phase_ticks = (ticks - (float)TIE_FLIGHT_HYPER_JUMP_START) * TIE_FLIGHT_HYPER_ENTRY_SCALE;
+	} else if (phase == 4 || ticks < (float)TIE_FLIGHT_HYPER_EXIT_START) {
+		out->phase = TIE_FLIGHT_HYPERSPACE_TUNNEL;
+		out->phase_ticks = ticks - (float)TIE_FLIGHT_HYPER_OUTSIDE_START;
+	} else {
+		out->phase = TIE_FLIGHT_HYPERSPACE_INBOUND;
+		out->phase_ticks = ticks - (float)TIE_FLIGHT_HYPER_EXIT_START;
+	}
+	if (out->phase_ticks < 0.0f)
+		out->phase_ticks = 0.0f;
+	out->seed = TieFlightRenderer_HyperspaceSeed(curr, out->phase);
+	return 1;
+}
+
+/* The craft's axes in view space (x right, y down, z forward). The jump
+ * levels the craft first, so it flies along world +Y with +Z up. */
+static void TieFlightRenderer_HyperspaceTunnelView(const TieFlightCamera* fcam, const float rows[9],
+												   TieFlightHyperspaceTunnelView* out) {
+	memset(out, 0, sizeof *out);
+	for (int r = 0; r < 3; ++r) {
+		out->right[r] = rows[r * 3 + 0];
+		out->forward[r] = rows[r * 3 + 1];
+		out->up[r] = rows[r * 3 + 2];
+	}
+	out->tan_half_fov_x = fmaxf(tanf(fcam->camera.h_half_rad), 0.0001f);
+	out->tan_half_fov_y = fmaxf(tanf(fcam->camera.v_half_rad), 0.0001f);
+	out->proj_offset_x = fcam->camera.proj_x_offset;
+	out->proj_offset_y = fcam->camera.proj_y_offset;
+}
+
+/* Prepares OpenXWA's hyperspace for this frame, after AeronScene_Begin:
+ * the tunnel behind the scene, or the entry or exit over it. */
+static void TieFlightRenderer_PrepareHyperspace(TieFlightRenderer* g, AeronCommandBuffer* cmd,
+												const TieSnapshot* curr, const TieFlightCamera* fcam,
+												int render_w, int render_h, uint64_t host_time_us) {
+	g->frame.hyperspace_tunnel = false;
+	g->frame.hyperspace_warp = false;
+	TieFlightHyperspaceMoment moment;
+	if (!g->hyperspace || !g->scene_model_backend ||
+		!TieFlightRenderer_HyperspaceMoment(g, curr, host_time_us, &moment))
+		return;
+	if (render_w <= 0 || render_h <= 0) {
+		render_w = g->rt_w;
+		render_h = g->rt_h;
+	}
+	/* The camera's world -> view rows. */
+	float rows[9];
+	TieRenderMath_QuaternionToMat3(fcam->camera.ori, rows);
+	TieFlightHyperspaceTunnelView tunnel_view;
+	TieFlightRenderer_HyperspaceTunnelView(fcam, rows, &tunnel_view);
+	const int world_scene = moment.phase != TIE_FLIGHT_HYPERSPACE_TUNNEL;
+	if (!TieFlightHyperspace_Prepare(g->hyperspace, cmd, rows, render_w, render_h, &moment, &tunnel_view,
+									 world_scene))
+		return;
+	g->frame.hyperspace_tunnel = !world_scene;
+	g->frame.hyperspace_warp = world_scene;
+}
+
+/* The hyperspace's light on the craft: the streaks and the tunnel's fades
+ * add to the ambient light during the entry and the exit. In the tunnel, its
+ * light replaces the sun and the mission's ambient light: the tunnel's
+ * diffuse environment, and its far end as a key light. The cockpit dims the
+ * world's light (TIE_FLIGHT_COCKPIT3D_WORLD_LIGHT); the hyperspace's light
+ * reaches it in full, as it comes in through the canopy all around. */
+static void TieFlightRenderer_ApplyHyperspaceLighting(TieFlightRenderer* g, TieFlightPbrPassUniforms* pbr) {
+	if (!g->frame.hyperspace_tunnel && !g->frame.hyperspace_warp)
+		return;
+	TieFlightHyperspaceLighting light;
+	if (!TieFlightHyperspace_GetPreparedLighting(g->hyperspace, &light))
+		return;
+	const float boost =
+		TIE_FLIGHT_HYPER_CRAFT_LIGHT * (g->cockpit3d_active ? 1.0f / TIE_FLIGHT_COCKPIT3D_WORLD_LIGHT : 1.0f);
+	float* const lobes[6] = { pbr->amb_pos_x, pbr->amb_neg_x, pbr->amb_pos_y,
+							  pbr->amb_neg_y, pbr->amb_pos_z, pbr->amb_neg_z };
+	const float* const adds[6] = { light.ambient_add.pos_x, light.ambient_add.neg_x, light.ambient_add.pos_y,
+								   light.ambient_add.neg_y, light.ambient_add.pos_z, light.ambient_add.neg_z };
+	for (int lobe = 0; lobe < 6; ++lobe) {
+		for (int channel = 0; channel < 3; ++channel) {
+			const float world = g->frame.hyperspace_tunnel ? 0.0f : lobes[lobe][channel];
+			const float lit = world + adds[lobe][channel] * boost;
+			lobes[lobe][channel] = fmaxf(lit, light.ambient_add.minimum[channel] * boost);
+		}
+	}
+	if (g->frame.hyperspace_tunnel)
+		memset(pbr->sun_color, 0, sizeof pbr->sun_color);
+	if (light.key_count) {
+		/* A diffuse light: the sun's slot would take the sun's shadows. */
+		memcpy(pbr->extra_dir[0], light.key.world_dir, sizeof light.key.world_dir);
+		for (int channel = 0; channel < 3; ++channel)
+			pbr->extra_col[0][channel] = light.key.color[channel] * boost;
+	}
+	const TieFlightHyperspaceEnvironmentMap* environment = &light.environment;
+	if (environment->texture && environment->sampler && environment->strength > 0.0f) {
+		AeronScene_SetPbrEnvironmentMap(g->scene, environment->texture, environment->sampler);
+		pbr->environment_params[0] = environment->strength * boost;
+		memcpy(pbr->environment_right, environment->right, sizeof environment->right);
+		memcpy(pbr->environment_up, environment->up, sizeof environment->up);
+		memcpy(pbr->environment_forward, environment->forward, sizeof environment->forward);
+	}
+}
+
+/* Draws the entry or exit over the finished scene, then the cockpit over
+ * that, and presents the result in place of the scene. */
+static bool TieFlightRenderer_RenderHyperspaceWarp(TieFlightRenderer* g, AeronCommandBuffer* cmd) {
+	const TieFlightSceneFrame* fr = &g->frame;
+	TieFlightHyperspaceWarpInput input;
+	memset(&input, 0, sizeof input);
+	input.scene = Aeron_RenderTargetGetTexture(AeronScene_SceneRt(g->scene));
+	input.depth = Aeron_DepthTargetGetTexture(AeronScene_DepthRt(g->scene));
+	AeronScene_RtDims(g->scene, &input.output_w, &input.output_h);
+	AeronScene_RenderDims(g->scene, &input.render_w, &input.render_h);
+	input.near_z = fr->fcam.camera.near_z > 0.0f ? fr->fcam.camera.near_z : 1.0f;
+	/* Reversed Z with an infinite far plane: depth = near / distance. */
+	input.keep_depth = input.near_z / (TIE_FLIGHT_HYPER_KEEP_DISTANCE_M * AERON_OPT_UNITS_PER_METER);
+	input.units_per_meter = AERON_OPT_UNITS_PER_METER;
+	AeronTexture* sky = g->tftc_skybox ? g->tftc_skybox : g->skybox_cube;
+	if (sky) {
+		input.sky_cube = sky;
+		input.sky_sampler = g->sampler_linear;
+		/* View -> world (the transpose of the camera's rows), then the sky's
+		 * world -> cube. */
+		float rows[9];
+		TieRenderMath_QuaternionToMat3(fr->fcam.camera.ori, rows);
+		for (int r = 0; r < 3; ++r)
+			for (int c = 0; c < 3; ++c)
+				input.sky_view_to_cube[r * 3 + c] = fr->sky_basis[r * 3 + 0] * rows[c * 3 + 0] +
+													fr->sky_basis[r * 3 + 1] * rows[c * 3 + 1] +
+													fr->sky_basis[r * 3 + 2] * rows[c * 3 + 2];
+		input.sky_scale = 1.0f;
+	}
+	TIE_GPU_PUSH(cmd, "Hyperspace scene warp");
+	AeronRenderTarget* warped = TieFlightHyperspace_RenderWarp(g->hyperspace, cmd, &input);
+	TIE_GPU_POP(cmd);
+	if (!warped)
+		return false;
+	g->scene_rt = warped;
+	if (!g->cockpit)
+		return true;
+	AeronRenderPass* pass = Aeron_BeginRenderPass(&(AeronRenderPassDesc) {
+		.color_target = warped,
+		.viewport = fr->fcam.camera.viewport,
+		.command_buffer = cmd,
+		.debug_label = "Cockpit over the hyperspace warp",
+	});
+	if (!pass)
+		return false;
+	TIE_GPU_MARKER(cmd, "Cockpit and flight HUD");
+	TieCockpitRenderer_RenderInPass(g->cockpit, cmd, pass, warped, fr->curr);
+	Aeron_EndRenderPass(pass);
+	return true;
 }
 
 static bool TieFlightRenderer_PrepareClassicMeshTables(TieFlightRenderer* g, AeronCommandBuffer* cmd,
@@ -779,7 +1005,9 @@ bool TieFlightRenderer_PrepareFrame(TieFlightRenderer* g, AeronCommandBuffer* cm
 
 	/* Hyperspace-streak prepare — vertex + index build, copy-pass
 	 * uploads. No-op outside hyperspace phases 3 & 5. */
-	bool hyperstars_ready = g->hyperstars && TieFlightHyperstars_Prepare(g->hyperstars, cmd, curr, &fcam);
+	const bool hd_hyperspace = g->hyperspace && g->scene_model_backend;
+	bool hyperstars_ready =
+		!hd_hyperspace && g->hyperstars && TieFlightHyperstars_Prepare(g->hyperstars, cmd, curr, &fcam);
 	bool stars_ready = g->stars && !TieFlightAssetSource_IsRemastered(g->assets) &&
 					   TieFlightStars_Prepare(g->stars, cmd, curr, g->starfield_style);
 
@@ -796,6 +1024,7 @@ bool TieFlightRenderer_PrepareFrame(TieFlightRenderer* g, AeronCommandBuffer* cm
 		return false;
 	int render_w, render_h;
 	AeronScene_RenderDims(g->scene, &render_w, &render_h);
+	TieFlightRenderer_PrepareHyperspace(g, cmd, curr, &fcam, render_w, render_h, host_time_us);
 	TieFlightPointLightFrame point_frame = { 0 };
 	if (g->scene_model_backend)
 		TieFlightPointLights_DerivePrimaryView(&point_frame, curr, curr->camera.world_pos);
@@ -855,6 +1084,7 @@ bool TieFlightRenderer_PrepareFrame(TieFlightRenderer* g, AeronCommandBuffer* cm
 									   g->tftc_skybox_rotation[r * 3 + 1] * k_tie_world_to_cube[1 * 3 + c] +
 									   g->tftc_skybox_rotation[r * 3 + 2] * k_tie_world_to_cube[2 * 3 + c];
 	}
+	memcpy(g->frame.sky_basis, sky_basis, sizeof sky_basis);
 	AeronScene_SetSkyCube(g->scene, TieFlightRenderer_SelectSkyboxCube(g, curr), sky_basis, 1.0f);
 
 	/* Normalize the retained snapshot displacement to OpenXWA's 32 ms
@@ -938,6 +1168,7 @@ bool TieFlightRenderer_PrepareFrame(TieFlightRenderer* g, AeronCommandBuffer* cm
 	TieFlightPbrPassUniforms frame_pbr;
 	TieFlightPbr_BuildPassUniforms(&frame_pbr, fcam.camera.pos, curr->directional_dir, false, &frame_ao,
 								   &point_params);
+	TieFlightRenderer_ApplyHyperspaceLighting(g, &frame_pbr);
 	AeronScene_SetFrameUniformData(g->scene, AERON_SHADER_STAGE_FRAGMENT, 1, &frame_pbr, sizeof frame_pbr);
 	AeronScene_SetPbrDebugViews(g->scene,
 								frame_pbr.debug_isolate_term != 0.0f || frame_pbr.spec_geom_adapt == 0.0f);
@@ -960,6 +1191,10 @@ bool TieFlightRenderer_RenderFrame(TieFlightRenderer* g, AeronCommandBuffer* cmd
 	/* Scene RT for bloom + present: the scene's mb_rt when the motion-
 	 * blur resolve ran this frame, its color RT otherwise. */
 	g->scene_rt = AeronScene_SceneRt(g->scene);
+	if (g->frame.hyperspace_warp && !TieFlightRenderer_RenderHyperspaceWarp(g, cmd)) {
+		g->frame.curr = NULL;
+		return false;
+	}
 	g->frame.curr = NULL; /* hooks must not outlive the snapshot */
 
 	/* === Bloom (operates on the scene RT → bloom chain) ===

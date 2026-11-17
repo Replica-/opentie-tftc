@@ -135,7 +135,6 @@ struct TieFlightHyperspace {
 	AeronShader* streak_fs;
 	AeronShader* tunnel_vs;
 	AeronShader* tunnel_fs;
-	AeronShader* fullscreen_vs;
 	AeronShader* warp_sky_fs;
 	AeronShader* warp_fs;
 	/* The tunnel in its own scene. */
@@ -153,6 +152,10 @@ struct TieFlightHyperspace {
 	AeronRenderTarget* layer_rt;
 	AeronRenderTarget* warp_rt[2];
 	AeronRenderTarget* sky_rt[2];
+	/* The composite, in the flight scene's format, so the cockpit can be
+	 * drawn over it and it can be presented in place of the scene. */
+	AeronRenderTarget* output_rt;
+	AeronTextureFormat output_format;
 	int layer_w, layer_h;
 	AeronSampler* point_sampler;
 	AeronComputePipeline* environment_pipeline;
@@ -205,9 +208,10 @@ static AeronBlendStateDesc hyper_blend_pma(void) {
 /* The hyperspace draws make their geometry from SV_VertexID, without a
  * depth test. `depth_attachment` matches a pass with the scene's depth. */
 static AeronGraphicsPipeline* hyper_create_pipeline(AeronShader* vs, AeronShader* fs, const AeronBlendStateDesc* blend,
-													int depth_attachment, AeronSampleCount sample_count) {
+													int depth_attachment, AeronSampleCount sample_count,
+													AeronTextureFormat format) {
 	AeronColorTargetStateDesc target = {
-		.format = AERON_TEXTURE_FORMAT_RGBA16_FLOAT,
+		.format = format,
 	};
 	if (blend) {
 		target.blend = *blend;
@@ -238,7 +242,7 @@ static int hyper_ensure_pipelines(TieFlightHyperspace* h, AeronSampleCount sampl
 	hyper_destroy_pipeline(&h->tunnel_pipeline);
 	h->pipeline_samples = 0;
 	const AeronBlendStateDesc pma = hyper_blend_pma();
-	h->tunnel_pipeline = hyper_create_pipeline(h->tunnel_vs, h->tunnel_fs, &pma, 1, sample_count);
+	h->tunnel_pipeline = hyper_create_pipeline(h->tunnel_vs, h->tunnel_fs, &pma, 1, sample_count, h->output_format);
 	if (!h->tunnel_pipeline) {
 		return 0;
 	}
@@ -254,15 +258,19 @@ static int hyper_ensure_warp_pipelines(TieFlightHyperspace* h) {
 	const AeronBlendStateDesc pma = hyper_blend_pma();
 	if (!h->layer_streak_pipeline)
 		h->layer_streak_pipeline =
-			hyper_create_pipeline(h->streak_vs, h->streak_fs, &additive, 0, AERON_SAMPLE_COUNT_1);
+			hyper_create_pipeline(h->streak_vs, h->streak_fs, &additive, 0, AERON_SAMPLE_COUNT_1,
+								  AERON_TEXTURE_FORMAT_RGBA16_FLOAT);
 	if (!h->layer_tunnel_pipeline)
 		h->layer_tunnel_pipeline =
-			hyper_create_pipeline(h->tunnel_vs, h->tunnel_fs, &pma, 0, AERON_SAMPLE_COUNT_1);
+			hyper_create_pipeline(h->tunnel_vs, h->tunnel_fs, &pma, 0, AERON_SAMPLE_COUNT_1,
+								  AERON_TEXTURE_FORMAT_RGBA16_FLOAT);
 	if (!h->warp_sky_pipeline)
 		h->warp_sky_pipeline =
-			hyper_create_pipeline(h->fullscreen_vs, h->warp_sky_fs, NULL, 0, AERON_SAMPLE_COUNT_1);
+			hyper_create_pipeline(h->tunnel_vs, h->warp_sky_fs, NULL, 0, AERON_SAMPLE_COUNT_1,
+								  AERON_TEXTURE_FORMAT_RGBA16_FLOAT);
 	if (!h->warp_pipeline)
-		h->warp_pipeline = hyper_create_pipeline(h->fullscreen_vs, h->warp_fs, NULL, 0, AERON_SAMPLE_COUNT_1);
+		h->warp_pipeline = hyper_create_pipeline(h->tunnel_vs, h->warp_fs, NULL, 0, AERON_SAMPLE_COUNT_1,
+												 h->output_format);
 	return h->layer_streak_pipeline && h->layer_tunnel_pipeline && h->warp_sky_pipeline && h->warp_pipeline;
 }
 
@@ -279,11 +287,15 @@ static void hyper_release_warp_targets(TieFlightHyperspace* h) {
 			Aeron_DestroyRenderTarget(h->sky_rt[i]);
 		h->sky_rt[i] = NULL;
 	}
+	if (h->output_rt)
+		Aeron_DestroyRenderTarget(h->output_rt);
+	h->output_rt = NULL;
 }
 
-/* Makes `*target` an RGBA16F target of `width` x `height`, and remakes it
- * when its size changed. */
-static int hyper_ensure_target(AeronRenderTarget** target, int width, int height, const char* name) {
+/* Makes `*target` a target of `format` and `width` x `height`, and remakes
+ * it when its size changed. */
+static int hyper_ensure_target_format(AeronRenderTarget** target, int width, int height, AeronTextureFormat format,
+									  const char* name) {
 	if (*target) {
 		const AeronTexture* texture = Aeron_RenderTargetGetTexture(*target);
 		if (texture && Aeron_TextureGetWidth(texture) == width && Aeron_TextureGetHeight(texture) == height) {
@@ -294,10 +306,14 @@ static int hyper_ensure_target(AeronRenderTarget** target, int width, int height
 	*target = Aeron_CreateRenderTarget(&(AeronRenderTargetDesc) {
 		.width = width,
 		.height = height,
-		.format = AERON_TEXTURE_FORMAT_RGBA16_FLOAT,
+		.format = format,
 		.debug_name = name,
 	});
 	return *target != NULL;
+}
+
+static int hyper_ensure_target(AeronRenderTarget** target, int width, int height, const char* name) {
+	return hyper_ensure_target_format(target, width, height, AERON_TEXTURE_FORMAT_RGBA16_FLOAT, name);
 }
 
 /* The size of the sky passes' targets: the output size, or half of it. */
@@ -325,7 +341,9 @@ static int hyper_ensure_warp_targets(TieFlightHyperspace* h, int render_w, int r
 		h->layer_w = h->layer_rt ? render_w : 0;
 		h->layer_h = h->layer_rt ? render_h : 0;
 	}
-	if (!h->layer_rt || !hyper_ensure_target(&h->warp_rt[0], output_w, output_h, "tie.hyperspace.warp_a")) {
+	if (!h->layer_rt || !hyper_ensure_target(&h->warp_rt[0], output_w, output_h, "tie.hyperspace.warp_a") ||
+		!hyper_ensure_target_format(&h->output_rt, output_w, output_h, h->output_format,
+									"tie.hyperspace.output")) {
 		return 0;
 	}
 	if (!h->jump.warp_sky_half_resolution) {
@@ -338,7 +356,8 @@ static int hyper_ensure_warp_targets(TieFlightHyperspace* h, int render_w, int r
 }
 
 TieFlightHyperspace* TieFlightHyperspace_Create(const TieFlightHyperspaceTunnelParams* tunnel,
-													const TieFlightHyperspaceJumpParams* jump) {
+													const TieFlightHyperspaceJumpParams* jump,
+													AeronTextureFormat scene_format) {
 	if (!tunnel || !jump) {
 		return NULL;
 	}
@@ -346,6 +365,7 @@ TieFlightHyperspace* TieFlightHyperspace_Create(const TieFlightHyperspaceTunnelP
 	if (!h) {
 		return NULL;
 	}
+	h->output_format = scene_format;
 	h->streak_vs = Aeron_CreateShader(&(AeronShaderDesc) {
 		.name = "hyperspace_streak.vert", .stage = AERON_SHADER_STAGE_VERTEX, .uniform_buffer_count = 1 });
 	h->streak_fs = Aeron_CreateShader(&(AeronShaderDesc) {
@@ -354,8 +374,6 @@ TieFlightHyperspace* TieFlightHyperspace_Create(const TieFlightHyperspaceTunnelP
 		.name = "hyperspace_tunnel.vert", .stage = AERON_SHADER_STAGE_VERTEX });
 	h->tunnel_fs = Aeron_CreateShader(&(AeronShaderDesc) {
 		.name = "hyperspace_tunnel.frag", .stage = AERON_SHADER_STAGE_FRAGMENT, .uniform_buffer_count = 1 });
-	h->fullscreen_vs =
-		Aeron_CreateShader(&(AeronShaderDesc) { .name = "fullscreen.vert", .stage = AERON_SHADER_STAGE_VERTEX });
 	h->warp_sky_fs = Aeron_CreateShader(&(AeronShaderDesc) { .name = "hyperspace_warp_sky.frag",
 															 .stage = AERON_SHADER_STAGE_FRAGMENT,
 															 .sampler_count = 4,
@@ -403,7 +421,7 @@ TieFlightHyperspace* TieFlightHyperspace_Create(const TieFlightHyperspaceTunnelP
 		.address_v = AERON_ADDRESS_CLAMP_TO_EDGE,
 		.address_w = AERON_ADDRESS_CLAMP_TO_EDGE,
 	});
-	if (!h->streak_vs || !h->streak_fs || !h->tunnel_vs || !h->tunnel_fs || !h->fullscreen_vs ||
+	if (!h->streak_vs || !h->streak_fs || !h->tunnel_vs || !h->tunnel_fs ||
 		!h->warp_sky_fs || !h->warp_fs || !h->environment_pipeline || !h->environment_atlas ||
 		!h->environment_cube || !h->environment_sampler || !h->point_sampler) {
 		Aeron_LogError("tie.hyperspace", "hyperspace: GPU resource creation failed");
@@ -413,6 +431,69 @@ TieFlightHyperspace* TieFlightHyperspace_Create(const TieFlightHyperspaceTunnelP
 	h->params = *tunnel;
 	h->jump = *jump;
 	return h;
+}
+
+void TieFlightHyperspace_DefaultParams(TieFlightHyperspaceTunnelParams* tunnel, TieFlightHyperspaceJumpParams* jump) {
+	if (tunnel) {
+		*tunnel = (TieFlightHyperspaceTunnelParams) {
+			.travel_speed = 13.0f,
+			.rotation_speed = -2.3f,
+			.noise_scale = 0.5f,
+			.brightness = 0.6f,
+			.highlight_strength = 3.0f,
+			.focal_length = 0.9f,
+			.twist = 0.1f,
+			.cap_radius = 0.001f,
+			.cap_falloff = 30.0f,
+			.mesh_ambient_strength = 0.7f,
+			.mesh_environment_roughness = 1.0f,
+			.mesh_key_strength = 0.377f,
+			.dark_color = { 0.0f, 0.0f, 0.0f },
+			.body_color = { 0.0f, 0.0f, 1.0f },
+			.highlight_color = { 0.05f, 0.24f, 0.99f },
+			.cap_color = { 0.09f, 0.28f, 1.0f },
+		};
+	}
+	if (jump) {
+		*jump = (TieFlightHyperspaceJumpParams) {
+			.star_count = 65536,
+			.streak_brightness = 0.4f,
+			.whiteout_brightness = 24.0f,
+			.brightness_range = 100.0f,
+			.streak_width_px = 0.9f,
+			.width_from_brightness = 0.0f,
+			.width_variation = 1.3f,
+			.head_widening = 1.15f,
+			.radial_widening = 0.3f,
+			.tail_taper = 0.35f,
+			.head_taper = 0.15f,
+			.taper_variation = 0.5f,
+			.glow_strength = 0.25f,
+			.glow_width = 4.0f,
+			.tail_brightness = 0.35f,
+			.tail_color = { 0.11f, 0.24f, 1.0f },
+			.stretch_scale = 0.8f,
+			.white_fade_seconds = 0.15f,
+			.tunnel_entry_brightness = 2.0f,
+			.tunnel_settle_seconds = 0.15f,
+			.mesh_light_strength = 0.5f,
+			.mesh_light_start = 0.1f,
+			.mesh_light_curve = 2.0f,
+			.tint = { 0.122f, 0.3544f, 1.0f },
+			.warp_start = 0.0f,
+			.warp_end = 2.0f,
+			.warp_curve = 3.0f,
+			.warp_distance_m = 10000.0f,
+			.warp_sky_zoom = 8.0f,
+			.warp_smear = 1.0f,
+			.warp_sky_highlights = 2.0f,
+			.warp_reveal_softness = 1.0f,
+			.warp_taps = 24,
+			.warp_sky_taps = 8,
+			.warp_sky_half_resolution = 1,
+			.exit_forward = 1,
+		};
+	}
 }
 
 void TieFlightHyperspace_SetParams(TieFlightHyperspace* h,
@@ -476,9 +557,9 @@ void TieFlightHyperspace_Destroy(TieFlightHyperspace* h) {
 	hyper_destroy_pipeline(&h->warp_sky_pipeline);
 	hyper_destroy_pipeline(&h->warp_pipeline);
 	hyper_release_warp_targets(h);
-	AeronShader* const shaders[7] = { h->streak_vs,		h->streak_fs,	  h->tunnel_vs, h->tunnel_fs,
-									  h->fullscreen_vs, h->warp_sky_fs, h->warp_fs };
-	for (int i = 0; i < 7; i++) {
+	AeronShader* const shaders[6] = { h->streak_vs, h->streak_fs,	h->tunnel_vs,
+									  h->tunnel_fs, h->warp_sky_fs, h->warp_fs };
+	for (int i = 0; i < 6; i++) {
 		if (shaders[i])
 			Aeron_DestroyShader(shaders[i]);
 	}
@@ -1196,8 +1277,8 @@ static AeronRenderTarget* hyper_warp_sky(TieFlightHyperspace* h, AeronCommandBuf
 	return targets[HYPER_WARP_SKY_PASSES - 1];
 }
 
-AeronTexture* TieFlightHyperspace_RenderWarp(TieFlightHyperspace* h, AeronCommandBuffer* cmd,
-											   const TieFlightHyperspaceWarpInput* in) {
+AeronRenderTarget* TieFlightHyperspace_RenderWarp(TieFlightHyperspace* h, AeronCommandBuffer* cmd,
+													const TieFlightHyperspaceWarpInput* in) {
 	if (!h || !cmd || !in || !in->scene || !in->depth || in->output_w <= 0 || in->output_h <= 0 ||
 		in->render_w <= 0 || in->render_h <= 0) {
 		return NULL;
@@ -1233,8 +1314,7 @@ AeronTexture* TieFlightHyperspace_RenderWarp(TieFlightHyperspace* h, AeronComman
 			return NULL;
 		}
 	}
-	/* The composite writes into the output-size target the sky isn't in. */
-	AeronRenderTarget* out = half || sky != h->warp_rt[0] ? h->warp_rt[0] : h->warp_rt[1];
+	AeronRenderTarget* out = h->output_rt;
 
 	HyperWarpUniform u;
 	memset(&u, 0, sizeof u);
@@ -1276,5 +1356,5 @@ AeronTexture* TieFlightHyperspace_RenderWarp(TieFlightHyperspace* h, AeronComman
 		Aeron_CommandBufferSetFailure(cmd, "Hyperspace warp composite recording failed");
 		return NULL;
 	}
-	return Aeron_RenderTargetGetTexture(out);
+	return out;
 }

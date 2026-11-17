@@ -157,8 +157,14 @@ typedef struct TieFlightHyperspaceMoment {
 	int look;            /* the jump's look, or -1 */
 } TieFlightHyperspaceMoment;
 
+/* OpenXWA's settings (its remaster/config.yaml). */
+void TieFlightHyperspace_DefaultParams(TieFlightHyperspaceTunnelParams* tunnel, TieFlightHyperspaceJumpParams* jump);
+
+/* `scene_format` is the flight scene's colour format: the tunnel draws into
+ * the scene, and the warp's result replaces it. */
 TieFlightHyperspace* TieFlightHyperspace_Create(const TieFlightHyperspaceTunnelParams* tunnel,
-													const TieFlightHyperspaceJumpParams* jump);
+													const TieFlightHyperspaceJumpParams* jump,
+													AeronTextureFormat scene_format);
 void TieFlightHyperspace_Destroy(TieFlightHyperspace* hyperspace);
 void TieFlightHyperspace_SetParams(TieFlightHyperspace* hyperspace,
 									 const TieFlightHyperspaceTunnelParams* params);
@@ -246,11 +252,12 @@ typedef struct TieFlightHyperspaceWarpInput {
 /* Draws the entry or the exit prepared with `world_scene` over the finished
  * scene: the streaks and the tunnel's fades into their layer, the sky
  * passes, then the composite (docs/hd_hyperspace_jump.md, Scene warp).
- * Returns the image to present instead of the scene, or NULL after a
- * failure, which is recorded on the command buffer. */
-AeronTexture* TieFlightHyperspace_RenderWarp(TieFlightHyperspace* hyperspace,
-											   AeronCommandBuffer* command_buffer,
-											   const TieFlightHyperspaceWarpInput* input);
+ * Returns the target to present instead of the scene, in the scene's
+ * format, or NULL after a failure, which is recorded on the command
+ * buffer. */
+AeronRenderTarget* TieFlightHyperspace_RenderWarp(TieFlightHyperspace* hyperspace,
+													AeronCommandBuffer* command_buffer,
+													const TieFlightHyperspaceWarpInput* input);
 
 /* Whether the exposure meter should keep its value this frame, so it doesn't
  * darken the white-out or the bright start and end of the tunnel. Set by the

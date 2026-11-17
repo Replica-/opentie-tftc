@@ -138,6 +138,12 @@ typedef struct TieFlightSceneFrame {
 	AeronRectI vp;
 	bool stars_ready;
 	bool hyperstars_ready;
+	/* OpenXWA's hyperspace this frame: the tunnel behind the scene, or the
+	 * entry or exit drawn over the finished scene (the scene warp). */
+	bool hyperspace_tunnel;
+	bool hyperspace_warp;
+	/* The sky's world -> cube basis, for the warp. */
+	float sky_basis[9];
 	bool hd_full;
 	/* SSAO requested this frame — the BEFORE_OPAQUE hook pushes the
 	 * pbr AO params with the live intensity; if the scene-side SSAO
@@ -263,6 +269,15 @@ struct TieFlightRenderer {
 	 * 3 & 5. NULL on shader / pipeline init failure; the flight render
 	 * then skips the streak pass. */
 	struct TieFlightHyperstars* hyperstars;
+
+	/* OpenXWA's HD hyperspace (hyperspace.c), in place of the hyperstars in
+	 * the HD style. NULL if init failed: the hyperstars are drawn instead. */
+	struct TieFlightHyperspace* hyperspace;
+	/* The hyperspace clock, carried on between the sim's ticks: the last
+	 * hyperticks seen, by how much they last grew, and when. */
+	uint16_t hyperspace_ticks;
+	uint16_t hyperspace_ticks_step;
+	uint64_t hyperspace_ticks_host_us;
 
 	/* Borrowed cockpit and flight-HUD compositor. NULL outside flight scenes.
 	 * Set by TieFlightRenderer_SetCockpit so TieFlightRenderer_Prep can fold the
@@ -479,6 +494,10 @@ void TieFlightRenderer_ReleaseSpeciesMesh(TieFlightSpeciesMesh* m);
 bool TieFlightRenderer_EnsureSceneSpeciesShip(struct TieFlightRenderer* g, AeronCommandBuffer* cmd,
 											  uint16_t species_idx);
 void TieFlightRenderer_ReleaseSceneSpeciesShip(struct TieFlightRenderer* g, TieFlightSpeciesSceneShip* s);
+
+/* The cockpit takes no shadows (its own hull would black it out), so the
+ * sun and sky reach it only weakly, as through the canopy frame. */
+#define TIE_FLIGHT_COCKPIT3D_WORLD_LIGHT 0.4f
 
 /* cockpit3d.c: Prepare loads the model before the scene begins; Submit adds it to the scene. */
 void TieFlightCockpit3d_Prepare(struct TieFlightRenderer* g, AeronCommandBuffer* cmd, const TieSnapshot* curr);

@@ -21,6 +21,7 @@
 #include "tie_remaster/flight/backdrops.h"
 #include "tie_remaster/flight/billboards.h"
 #include "tie_remaster/flight/hud_geometry.h"
+#include "tie_remaster/flight/hyperspace.h"
 #include "tie_remaster/flight/hyperstars.h"
 #include "tie_remaster/flight/pbr.h"
 #include "tie_remaster/flight/point_lights.h"
@@ -367,6 +368,12 @@ TieFlightRenderer* TieFlightRenderer_Init(int rt_w, int rt_h, AeronTextureFormat
 
 	/* HD hyperspace-streak pass. No asset-bundle dependency. */
 	g->hyperstars = TieFlightHyperstars_Create(g->rt_format);
+	TieFlightHyperspaceTunnelParams hyperspace_tunnel;
+	TieFlightHyperspaceJumpParams hyperspace_jump;
+	TieFlightHyperspace_DefaultParams(&hyperspace_tunnel, &hyperspace_jump);
+	g->hyperspace = TieFlightHyperspace_Create(&hyperspace_tunnel, &hyperspace_jump, g->rt_format);
+	if (!g->hyperspace)
+		Aeron_LogError("tie.flight", "HD hyperspace creation failed; the hyperstars stand in");
 
 	if (!g->mesh_vs || !g->mesh_classic_lut_ps || !g->line_vs || !g->mesh_pipeline || !g->line_pipeline ||
 		!g->bolt_line_pipeline || !g->classic_pip_mesh_pipeline || !g->classic_pip_line_pipeline ||
@@ -426,6 +433,8 @@ void TieFlightRenderer_Shutdown(TieFlightRenderer* g) {
 		TieFlightStars_Destroy(g->stars);
 	if (g->hyperstars)
 		TieFlightHyperstars_Destroy(g->hyperstars);
+	if (g->hyperspace)
+		TieFlightHyperspace_Destroy(g->hyperspace);
 	TieFlightRenderer_DestroySizedResources(g);
 	if (g->mesh_pipeline)
 		Aeron_DestroyGraphicsPipeline(g->mesh_pipeline);

@@ -31,9 +31,6 @@
  * texture as in XWA, and their self-lit texels glow without blooming. */
 #define TIE_FLIGHT_COCKPIT3D_BASE_COLOR 0.6f
 #define TIE_FLIGHT_COCKPIT3D_GLOW 0.5f
-/* The cockpit takes no shadows (its own hull would black it out), so the
- * sun and sky reach it only weakly, as through the canopy frame. */
-#define TIE_FLIGHT_COCKPIT3D_WORLD_LIGHT 0.4f
 /* The gunboat's shell sits in shade the sun hardly reaches; TFTC shows it
  * grey, so it gets an even fill light of this linear level. */
 #define TIE_FLIGHT_COCKPIT3D_GUNBOAT_FILL 0.2f
@@ -121,8 +118,11 @@ static const TieFlightCockpit3dModel k_cockpit3d_models[] = {
 
 /* How far the yoke tilts with the stick fully back or forward, and turns
  * with it fully over, in degrees. */
-#define TIE_FLIGHT_COCKPIT3D_YOKE_PITCH_DEG 8.0f
-#define TIE_FLIGHT_COCKPIT3D_YOKE_TURN_DEG 20.0f
+#define TIE_FLIGHT_COCKPIT3D_YOKE_PITCH_DEG 6.0f
+#define TIE_FLIGHT_COCKPIT3D_YOKE_TURN_DEG 15.0f
+/* The yoke's share of its travel at a small stick deflection; it grows to
+ * all of it with the stick fully over, so small corrections barely move it. */
+#define TIE_FLIGHT_COCKPIT3D_YOKE_CENTRE_SHARE 0.6f
 
 #define TIE_FLIGHT_COCKPIT3D_YOKE_MAX_MESHES 16
 #define TIE_FLIGHT_COCKPIT3D_YOKE_MAX_TEXTURES 32
@@ -620,17 +620,20 @@ void TieFlightCockpit3d_Prepare(TieFlightRenderer* g, AeronCommandBuffer* cmd, c
 static void TieFlightCockpit3d_YokeTransform(const TieFlightCockpit3dYoke* yoke, const float stick[3],
 											 const float cockpit[16], float out[16]) {
 	memcpy(out, cockpit, sizeof(float[16]));
+	const float centre = TIE_FLIGHT_COCKPIT3D_YOKE_CENTRE_SHARE;
 	if (!yoke)
 		return;
 	const float pivot[3] = { yoke->pivot[0] * AERON_OPT_METERS_PER_UNIT, yoke->pivot[1] * AERON_OPT_METERS_PER_UNIT,
 							 yoke->pivot[2] * AERON_OPT_METERS_PER_UNIT };
 	const float degrees = 3.14159265f / 180.0f;
-	const float turn = fmaxf(-1.0f, fminf(1.0f, stick[0] + stick[2]));
+	float turn = fmaxf(-1.0f, fminf(1.0f, stick[0] + stick[2]));
+	turn *= centre + (1.0f - centre) * fabsf(turn);
+	const float pitch = stick[1] * (centre + (1.0f - centre) * fminf(fabsf(stick[1]), 1.0f));
 	float turn_3x4[3][4], tilt_3x4[3][4];
 	TieRenderMath_Mat3x4RotationAboutPivot(turn_3x4, yoke->column, pivot,
 										   turn * TIE_FLIGHT_COCKPIT3D_YOKE_TURN_DEG * degrees);
 	TieRenderMath_Mat3x4RotationAboutPivot(tilt_3x4, (const float[3]) { 1.0f, 0.0f, 0.0f }, pivot,
-										   -stick[1] * TIE_FLIGHT_COCKPIT3D_YOKE_PITCH_DEG * degrees);
+										   -pitch * TIE_FLIGHT_COCKPIT3D_YOKE_PITCH_DEG * degrees);
 	float turn_m[16], tilt_m[16], local[16];
 	TieRenderMath_Mat4Identity(turn_m);
 	TieRenderMath_Mat4Identity(tilt_m);

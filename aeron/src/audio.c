@@ -1,6 +1,8 @@
 #include "internal.h"
 
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* Generic SDL3 software mixer. See include/aeron/audio.h for the model.
@@ -99,6 +101,80 @@ typedef struct AeronAudioSystem {
 } AeronAudioSystem;
 
 static AeronAudioSystem g_audio;
+
+/* With AERON_RECORD_AUDIO=<file>, the device mix is written to <file> as raw
+ * 48 kHz stereo s16le PCM, for tools/record/record_game.py. <file>.json
+ * gives the wall-clock time the first sample was heard. While the device is
+ * paused nothing is mixed, so the gap is filled with silence: the file keeps
+ * pace with the wall clock. Written on the audio thread only. */
+typedef struct AeronAudioRecording {
+	FILE*    file;
+	char     sidecar[1024];
+	uint64_t start_ticks_ns;
+	uint64_t frames;
+} AeronAudioRecording;
+
+static AeronAudioRecording g_recording;
+
+static void Aeron_AudioRecordOpen(void) {
+	const char* path = SDL_getenv("AERON_RECORD_AUDIO");
+	if (!path || !path[0]) {
+		return;
+	}
+	g_recording.file = fopen(path, "wb");
+	if (!g_recording.file) {
+		Aeron_LogError("aeron.audio", "cannot record the audio to %s", path);
+		return;
+	}
+	SDL_snprintf(g_recording.sidecar, sizeof g_recording.sidecar, "%s.json", path);
+	Aeron_LogInfo("aeron.audio", "recording the audio to %s", path);
+}
+
+static void Aeron_AudioRecord(const int16_t* pcm, int frames) {
+	if (!g_recording.file) {
+		return;
+	}
+	const uint64_t now_ns = SDL_GetTicksNS();
+	if (!g_recording.start_ticks_ns) {
+		/* The first mixed sample is heard once the device has played what it
+		 * holds. */
+		SDL_Time epoch_ns = 0;
+		SDL_GetCurrentTime(&epoch_ns);
+		const int64_t latency_ns =
+			(int64_t)g_audio.device_buffer_input_frames * 1000000000 / AERON_AUDIO_DEVICE_RATE;
+		g_recording.start_ticks_ns = now_ns;
+		FILE* sidecar = fopen(g_recording.sidecar, "w");
+		if (sidecar) {
+			fprintf(sidecar, "{\"rate\": %d, \"channels\": %d, \"start_epoch_ns\": %lld}\n",
+					AERON_AUDIO_DEVICE_RATE, AERON_AUDIO_DEVICE_CHANNELS, (long long)(epoch_ns + latency_ns));
+			fclose(sidecar);
+		}
+	} else {
+		/* Silence for a pause: the mix runs ahead of the clock by the device's
+		 * buffer, so only a gap longer than that is a pause. */
+		const uint64_t due = (now_ns - g_recording.start_ticks_ns) * AERON_AUDIO_DEVICE_RATE / 1000000000u;
+		const uint64_t slack = AERON_AUDIO_DEVICE_RATE / 10u;
+		if (due > g_recording.frames + slack) {
+			static const int16_t silence[1024 * AERON_AUDIO_DEVICE_CHANNELS];
+			uint64_t missing = due - g_recording.frames;
+			g_recording.frames += missing;
+			while (missing > 0) {
+				const size_t n = missing < 1024u ? (size_t)missing : 1024u;
+				fwrite(silence, sizeof(int16_t) * AERON_AUDIO_DEVICE_CHANNELS, n, g_recording.file);
+				missing -= n;
+			}
+		}
+	}
+	fwrite(pcm, sizeof(int16_t) * AERON_AUDIO_DEVICE_CHANNELS, (size_t)frames, g_recording.file);
+	g_recording.frames += (uint64_t)frames;
+}
+
+static void Aeron_AudioRecordClose(void) {
+	if (g_recording.file) {
+		fclose(g_recording.file);
+	}
+	memset(&g_recording, 0, sizeof g_recording);
+}
 
 /* Both locks are required for output-clock snapshots. */
 static int Aeron_AudioLockOutput(void) {
@@ -509,6 +585,7 @@ static void SDLCALL Aeron_AudioCallback(void* userdata, SDL_AudioStream* stream,
 	while (frames_remaining > 0) {
 		int chunk = frames_remaining < AERON_AUDIO_MIX_CHUNK ? frames_remaining : AERON_AUDIO_MIX_CHUNK;
 		Aeron_AudioMixChunk(chunk);
+		Aeron_AudioRecord(g_audio.stage, chunk);
 		SDL_PutAudioStreamData(stream, g_audio.stage,
 							   chunk * AERON_AUDIO_DEVICE_CHANNELS * (int)sizeof(int16_t));
 		SDL_LockMutex(g_audio.lock);
@@ -566,6 +643,7 @@ int Aeron_AudioInit(void) {
 		}
 	}
 
+	Aeron_AudioRecordOpen();
 	if (!SDL_ResumeAudioStreamDevice(g_audio.device)) {
 		Aeron_LogError("aeron.audio", "SDL_ResumeAudioStreamDevice failed: %s", SDL_GetError());
 	}
@@ -644,6 +722,7 @@ void Aeron_AudioShutdown(void) {
 	 * run again before we tear down the tables. */
 	SDL_DestroyAudioStream(g_audio.device);
 	g_audio.device = NULL;
+	Aeron_AudioRecordClose();
 
 	/* Producers have joined before the device and sample storage are released. */
 	SDL_LockMutex(g_audio.lock);

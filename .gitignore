@@ -68,3 +68,6 @@ resources/cockpit3d/
 
 # TFTC reference screenshots for comparing cockpits (not redistributable)
 docs/tftc_reference/
+
+# Gameplay recordings (tools/record/record_game.py)
+recordings/

@@ -123,6 +123,8 @@ static const char* const s_signals[] = {
 /* The spacing of the markers a waiting sting starts on: a bar of the MIDI
  * score at about 120 beats a minute. */
 #define TFTC_MARKER_US 2000000u
+/* The most times one sting plays in a row; another request for it is dropped. */
+#define TFTC_STING_MAX_RUN 2
 #define TFTC_BUFFER_SECONDS 2
 #define TFTC_DECODE_FRAMES 4096
 /* The recordings start on up to 1 s of silence and end on long fades: the
@@ -153,6 +155,7 @@ typedef struct TieTftcSource {
 typedef struct TieTftcVoice {
 	int track; /* 0 outside flight state music */
 	bool bridge; /* the decoder is on the bridge into `track` */
+	uint64_t bridge_end_us; /* when the bridge it went on from is heard to end */
 	bool loop;
 	const char* file;			/* the file the decoder is on */
 	const char* next;			/* the file to go on into at its end */
@@ -182,6 +185,8 @@ static TieTftcVoice s_sting_fading; /* a sting stopped by a screen change, fadin
 static int s_sting_waiting = TFTC_SIGNAL_NONE; /* the sting waiting to start */
 static int s_sting_waiting_priority;
 static uint64_t s_sting_due_us; /* its marker; 0 for the playing sting's end */
+static int s_sting_last = TFTC_SIGNAL_NONE; /* the last sting started, */
+static int s_sting_run;						/* and how many times in a row */
 static int s_pending;		  /* the track TIE's state asks for */
 static uint64_t s_track_us;	  /* when s_voice started */
 static uint64_t s_update_us;
@@ -372,7 +377,12 @@ static bool TieTftcVoice_Fill(TieTftcVoice* v) {
 			const double end_s = (double)(v->file_frames - v->held_frames) / v->rate;
 			const double tail_s = (double)v->held_frames / v->rate;
 			v->at_start = true;
+			const bool was_bridge = v->bridge;
+			const uint64_t queued_us =
+				(uint64_t)Aeron_AudioStreamQueuedFrames(v->stream) * 1000000u / (uint64_t)v->rate;
 			if (!silent_file && TieTftcVoice_Continue(v)) {
+				if (was_bridge)
+					v->bridge_end_us = Aeron_NowUs() + queued_us;
 				/* The held tail plays under the next file's start. */
 				int16_t* tail = v->held;
 				v->held = v->mix;
@@ -538,14 +548,27 @@ static int TieTftcMusic_StingFor(int tie_sequence) {
 		return TFTC_SIGNAL_NONE;
 	if (stings[tie_sequence] != TFTC_SIGNAL_WIN_1)
 		return stings[tie_sequence];
-	if (!s_wins_left)
+	static int s_last_win = -1, s_held_out = -1;
+	if (!s_wins_left) {
+		/* A new round, without the win that ended the last one first in it. */
 		s_wins_left = (1u << TFTC_SIGNAL_WIN_COUNT) - 1u;
+		if (s_last_win >= 0) {
+			s_held_out = s_last_win;
+			s_wins_left &= ~(1u << s_held_out);
+		}
+	}
 	int pick = rand() % __builtin_popcount(s_wins_left);
 	int win = 0;
 	for (; win < TFTC_SIGNAL_WIN_COUNT; ++win)
 		if ((s_wins_left & (1u << win)) && pick-- == 0)
 			break;
 	s_wins_left &= ~(1u << win);
+	/* The win held out of this round's start joins it once another has played. */
+	if (s_held_out >= 0) {
+		s_wins_left |= 1u << s_held_out;
+		s_held_out = -1;
+	}
+	s_last_win = win;
 	return TFTC_SIGNAL_WIN_1 + win;
 }
 
@@ -559,6 +582,8 @@ static void TieTftcMusic_StartSting(int signal) {
 	s_sting.fade_from = 1.0f;
 	s_sting.fade_to = 1.0f;
 	s_sting.fade_us = 1;
+	s_sting_run = signal == s_sting_last ? s_sting_run + 1 : 1;
+	s_sting_last = signal;
 	TieTftcVoice_Fill(&s_sting);
 	TieTftcVoice_ApplyGain(&s_sting, Aeron_NowUs(), 1.0f);
 	Aeron_AudioStreamPlay(s_sting.stream);
@@ -570,10 +595,19 @@ static void TieTftcMusic_StartSting(int signal) {
  * strictly higher priority (fscript.c sequencePriorities), and is otherwise
  * dropped. A sting that has started has no priority, so the next request
  * waits for its end, its last marker. The recordings have no markers; a
- * TFTC_MARKER_US grid from the state track's start stands in for them. */
+ * TFTC_MARKER_US grid from the state track's start stands in for them.
+ * Stings and the bridges between states take turns, never playing over one
+ * another, and one sting plays at most TFTC_STING_MAX_RUN times in a row. */
 static void TieTftcMusic_PlaySting(int signal, int priority) {
 	if (!s_voice.stream)
 		return;
+	const int last = s_sting_waiting != TFTC_SIGNAL_NONE ? s_sting_waiting : s_sting_last;
+	const int run = s_sting_waiting != TFTC_SIGNAL_NONE ? (s_sting_waiting == s_sting_last ? s_sting_run + 1 : 1)
+														 : s_sting_run;
+	if (signal == last && run >= TFTC_STING_MAX_RUN) {
+		Aeron_LogInfo("tie.music", "TFTC music: %s dropped, played %d times in a row", s_signals[signal], run);
+		return;
+	}
 	const uint64_t now = Aeron_NowUs();
 	if (s_sting_waiting != TFTC_SIGNAL_NONE) {
 		if (s_sting_waiting_priority >= priority)
@@ -592,9 +626,11 @@ static void TieTftcMusic_PlaySting(int signal, int priority) {
 	s_sting_waiting_priority = priority;
 }
 
-/* Starts the waiting sting when its marker comes. */
+/* Starts the waiting sting when its marker comes, once no bridge plays. */
 static void TieTftcMusic_UpdateWaitingSting(uint64_t now) {
 	if (s_sting_waiting == TFTC_SIGNAL_NONE || s_sting.stream || (s_sting_due_us && now < s_sting_due_us))
+		return;
+	if (s_voice.stream && (s_voice.bridge || now < s_voice.bridge_end_us))
 		return;
 	const int signal = s_sting_waiting;
 	s_sting_waiting = TFTC_SIGNAL_NONE;
@@ -779,7 +815,8 @@ void TieTftcMusic_Update(void) {
 	s_update_us = now;
 	/* The Music Volume During Speech setting, as iMUSE applies it to MIDI. */
 	s_speech_duck = TieImuseSession_MusicDuckGain();
-	if (s_pending && s_pending != s_voice.track &&
+	/* A state change and its bridge wait for a playing sting to end. */
+	if (s_pending && s_pending != s_voice.track && !s_sting.stream &&
 		(!s_voice.stream || s_pending >= TFTC_TRACK_FAILURE || now - s_track_us >= TFTC_HOLD_US))
 		TieTftcMusic_Switch(s_pending);
 

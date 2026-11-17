@@ -3862,13 +3862,20 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 			TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, w * lit, h, 1.0f, 0.92f, 0.15f, 1.0f);
 		return;
 	}
-	/* XWA's recharge screens: a solid bar of the system's energy, lasers
-	 * green, shields yellow, beam magenta (full rings on the TIE Avenger at
-	 * a mission's start), dark on a craft without the system, filling from
-	 * the left or the bottom. The recharge setting the TIE power sliders
+	/* XWA's recharge screens: a solid bar of the system's energy (full
+	 * rings on the TIE Avenger at a mission's start), dark on a craft
+	 * without the system, filling from the left or the bottom. Each system
+	 * has the same colour in every cockpit: lasers green, shields yellow,
+	 * beam red, engine (energy) blue. The recharge setting the TIE power sliders
 	 * show (0..4, 2 normal) marks the bar like a dial: a bright tick at the
 	 * setting among faint ticks at the steps. The engine power screen shows
 	 * its setting alone. */
+	static const float k_laser[3] = { 0.1f, 0.9f, 0.2f }, k_shield[3] = { 0.95f, 0.85f, 0.1f },
+					   k_beam[3] = { 1.0f, 0.12f, 0.08f }, k_engine[3] = { 0.15f, 0.45f, 1.0f };
+	const float* colour = source == TIE_DC_LASER_POWER	  ? k_laser
+						  : source == TIE_DC_SHIELD_POWER ? k_shield
+						  : source == TIE_DC_BEAM_POWER	  ? k_beam
+														  : k_engine;
 	const uint16_t cap = snap->hud.working_subsystems;
 	const uint16_t sub = snap->hud.subsystem_active;
 	float fraction = 0.0f;
@@ -3895,20 +3902,15 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 			level = (ins->value + 1) / 3;
 	}
 	/* The gunboat's and missile boat's recharge screens are TFTC's
-	 * segmented setting gauges: a block per step of the setting, in the
-	 * craft's colours (the missile boat's beam red and its engine orange). */
+	 * segmented setting gauges: a block per step of the setting. */
 	const char* model = cg->flight_gpu ? TieFlightRenderer_Cockpit3dModel(cg->flight_gpu) : NULL;
 	if (model && strcmp(model, "TieAvengerCockpit") == 0 &&
 		(source == TIE_DC_LASER_POWER || source == TIE_DC_SHIELD_POWER)) {
 		/* The TIE Avenger's rings (shields left, lasers right) show the
-		 * setting a quarter per step, clockwise from 9 o'clock, each quarter
-		 * its own colour: low orange, middle red, high yellow, maximum blue;
-		 * black above the setting, black notches between. The shield ring's
-		 * display runs counterclockwise from 6 o'clock and the laser ring's
-		 * clockwise, so `quarter` gives each step's place along it. */
-		static const float k_steps[4][3] = {
-			{ 1.0f, 0.45f, 0.05f }, { 1.0f, 0.1f, 0.08f }, { 0.95f, 0.85f, 0.1f }, { 0.15f, 0.65f, 1.0f },
-		};
+		 * setting a quarter per step, clockwise from 9 o'clock; black above
+		 * the setting, black notches between. The shield ring's display runs
+		 * counterclockwise from 6 o'clock and the laser ring's clockwise, so
+		 * `quarter` gives each step's place along it. */
 		static const int k_shield_quarter[4] = { 2, 1, 0, 3 }, k_laser_quarter[4] = { 1, 2, 3, 0 };
 		const int* quarter = source == TIE_DC_SHIELD_POWER ? k_shield_quarter : k_laser_quarter;
 		const int lit = level < 0 ? 0 : level > 4 ? 4 : level;
@@ -3918,8 +3920,8 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 		for (int i = 0; i < lit; ++i) {
 			const float at = gap * 0.5f + (float)quarter[i] * (cell + gap);
 			const float x = along_x ? at : 0.0f, y = along_x ? 0.0f : length - at - cell;
-			TieCockpitRenderer_DcFill(surface->list, x, y, along_x ? cell : w, along_x ? h : cell, k_steps[i][0],
-									  k_steps[i][1], k_steps[i][2], 1.0f);
+			TieCockpitRenderer_DcFill(surface->list, x, y, along_x ? cell : w, along_x ? h : cell, colour[0],
+									  colour[1], colour[2], 1.0f);
 		}
 		return;
 	}
@@ -3928,18 +3930,10 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 		 * each face showing the same part of the display: the display is
 		 * lit whole, and DrawDcScreen lights the dashes up to the setting. */
 		cg->dc_laser_dashes = level < 0 ? 0 : level > 4 ? 4 : level;
-		TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, w, h, 0.1f, 0.9f, 0.2f, 1.0f);
+		TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, w, h, colour[0], colour[1], colour[2], 1.0f);
 		return;
 	}
 	if (model && strncmp(model, "Tie", 3) != 0) {
-		const bool missile_boat = strcmp(model, "MissileBoatCockpit") == 0;
-		static const float k_green[3] = { 0.1f, 0.9f, 0.2f }, k_yellow[3] = { 0.95f, 0.85f, 0.1f },
-						   k_magenta[3] = { 0.8f, 0.1f, 0.85f }, k_cyan[3] = { 0.15f, 0.75f, 1.0f },
-						   k_red[3] = { 1.0f, 0.12f, 0.08f }, k_orange[3] = { 1.0f, 0.5f, 0.05f };
-		const float* c = source == TIE_DC_LASER_POWER	 ? k_green
-						 : source == TIE_DC_SHIELD_POWER ? k_yellow
-						 : source == TIE_DC_BEAM_POWER	 ? (missile_boat ? k_red : k_magenta)
-														 : (missile_boat ? k_orange : k_cyan);
 		if (level < 0 && source == TIE_DC_BEAM_POWER)
 			level = snap->hud.beam_power; /* the setting, on a craft whose beam is off */
 		const int lit = level < 0 ? 0 : level > 4 ? 4 : level;
@@ -3950,17 +3944,11 @@ static void TieCockpitRenderer_DrawDcGauge(TieCockpitRenderer* cg, const struct 
 			const float at = (float)i * (cell + gap);
 			const float x = along_x ? at : 0.0f, y = along_x ? 0.0f : length - at - cell;
 			if (i < lit)
-				TieCockpitRenderer_DcFill(surface->list, x, y, along_x ? cell : w, along_x ? h : cell, c[0], c[1], c[2],
-										  1.0f);
+				TieCockpitRenderer_DcFill(surface->list, x, y, along_x ? cell : w, along_x ? h : cell, colour[0],
+										  colour[1], colour[2], 1.0f);
 		}
 		return;
 	}
-	static const float k_laser[3] = { 0.1f, 0.9f, 0.2f }, k_shield[3] = { 0.95f, 0.85f, 0.1f },
-					   k_beam[3] = { 0.8f, 0.2f, 0.9f }, k_engine[3] = { 0.3f, 0.6f, 1.0f };
-	const float* colour = source == TIE_DC_LASER_POWER	  ? k_laser
-						  : source == TIE_DC_SHIELD_POWER ? k_shield
-						  : source == TIE_DC_BEAM_POWER	  ? k_beam
-														  : k_engine;
 	const bool along_x = w >= h;
 	const float length = along_x ? w : h;
 	TieCockpitRenderer_DcFill(surface->list, 0.0f, 0.0f, w, h, 0.004f, 0.012f, 0.006f, 1.0f);

@@ -1,51 +1,106 @@
 {
   "version": "0.2.0",
   "configurations": [
+    // ────────────────────────────────────────────────────────────────────────
+    // 🎮  PLAY  (Release builds)
+    // ────────────────────────────────────────────────────────────────────────
     {
-      "name": "Cockpit Notes (localhost:8765)",
-      "type": "debugpy",
+      "name": "🎮 OpenTIE (Release)",
+      "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/tools/cockpit_notes/server.py",
-      "cwd": "${workspaceFolder}",
-      "console": "integratedTerminal",
-      "serverReadyAction": {
-        "pattern": "Cockpit Notes on (http://localhost:[0-9]+/)",
-        "uriFormat": "%s",
-        "action": "openExternally"
+      "program": "${workspaceFolder}/build/Release/OpenTIE.exe",
+      "args": [],
+      "cwd": "${workspaceFolder}/build/Release",
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+      "preLaunchTask": "Build OpenTIE (Release)",
+      "presentation": {
+        "group": "1 🎮 Play",
+        "order": 1
       }
     },
     {
-      "name": "Record OpenTIE (Release, skip to mission 1, with audio)",
-      "type": "debugpy",
+      "name": "🎼 OpenTIE (Release, skip to mission 1, TFTC music)",
+      "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/tools/record/record_game.py",
-      "args": ["--config", "Release", "--trim", "2", "--open-folder", "--", "--skip-to-mission", "REPLICA"],
-      "cwd": "${workspaceFolder}",
-      "console": "integratedTerminal",
-      "preLaunchTask": "Build OpenTIE (Release)"
+      "program": "${workspaceFolder}/build/Release/OpenTIE.exe",
+      "args": [
+        "--skip-to-mission",
+        "REPLICA",
+        "--music",
+        "tftc"
+      ],
+      "cwd": "${workspaceFolder}/build/Release",
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+      "preLaunchTask": "Build OpenTIE (Release)",
+      "presentation": {
+        "group": "1 🎮 Play",
+        "order": 2
+      }
     },
     {
-      "name": "Record OpenTIE (Release, mission 1-1 in a TIE Defender, launch film + hyperspace in, with audio)",
-      "type": "debugpy",
+      "name": "🎹 OpenTIE (Release, skip to mission 1, iMUSE MIDI music)",
+      "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/tools/record/record_game.py",
-      "args": ["--config", "Release", "--trim", "2", "--open-folder", "--", "--skip-to-mission", "REPLICA", "1", "1", "--player-craft", "defender", "--launch-film", "--hyperspace-in"],
-      "cwd": "${workspaceFolder}",
-      "console": "integratedTerminal",
-      "preLaunchTask": "Build OpenTIE (Release)"
+      "program": "${workspaceFolder}/build/Release/OpenTIE.exe",
+      "args": [
+        "--skip-to-mission",
+        "REPLICA",
+        "--music",
+        "imuse"
+      ],
+      "cwd": "${workspaceFolder}/build/Release",
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+      "preLaunchTask": "Build OpenTIE (Release)",
+      "presentation": {
+        "group": "1 🎮 Play",
+        "order": 3
+      }
     },
+
+    // ────────────────────────────────────────────────────────────────────────
+    // 🐞  DEBUG  (Debug builds under gdb)
+    // ────────────────────────────────────────────────────────────────────────
     {
-      "name": "Record OpenTIE (Release, with audio)",
-      "type": "debugpy",
-      "request": "launch",
-      "program": "${workspaceFolder}/tools/record/record_game.py",
-      "args": ["--config", "Release", "--trim", "2", "--open-folder"],
-      "cwd": "${workspaceFolder}",
-      "console": "integratedTerminal",
-      "preLaunchTask": "Build OpenTIE (Release)"
-    },
-    {
-      "name": "OpenTIE (Debug, gdb)",
+      "name": "🐞 OpenTIE (Debug, gdb)",
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
@@ -71,10 +126,14 @@
           "text": "-enable-pretty-printing",
           "ignoreFailures": true
         }
-      ]
+      ],
+      "presentation": {
+        "group": "2 🐞 Debug",
+        "order": 1
+      }
     },
     {
-      "name": "OpenTIE (Debug, skip to mission 1)",
+      "name": "⏭️ OpenTIE (Debug, skip to mission 1)",
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
@@ -103,10 +162,14 @@
           "text": "-enable-pretty-printing",
           "ignoreFailures": true
         }
-      ]
+      ],
+      "presentation": {
+        "group": "2 🐞 Debug",
+        "order": 2
+      }
     },
     {
-      "name": "OpenTIE (Debug, all missions unlocked)",
+      "name": "🔓 OpenTIE (Debug, all missions unlocked)",
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
@@ -134,10 +197,55 @@
           "text": "-enable-pretty-printing",
           "ignoreFailures": true
         }
-      ]
+      ],
+      "presentation": {
+        "group": "2 🐞 Debug",
+        "order": 3
+      }
     },
     {
-      "name": "OpenTIE (Debug, TIE Fighter: battle 1 mission 1)",
+      "name": "👻 OpenTIE (Debug, headless, skip to mission 1)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
+      "args": [
+        "--headless",
+        "--skip-to-mission",
+        "REPLICA"
+      ],
+      "cwd": "${workspaceFolder}/build/Debug",
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
+        },
+        {
+          "name": "SDL_ASSERT",
+          "value": "always_ignore"
+        }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+      "preLaunchTask": "Build OpenTIE (Debug)",
+      "setupCommands": [
+        {
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      "presentation": {
+        "group": "2 🐞 Debug",
+        "order": 4
+      }
+    },
+
+    // ────────────────────────────────────────────────────────────────────────
+    // 🚀  COCKPITS  (Debug, one mission per craft)
+    // ────────────────────────────────────────────────────────────────────────
+    {
+      "name": "🛩️ TIE Fighter (Debug, battle 1 mission 1)",
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
@@ -168,10 +276,14 @@
           "text": "-enable-pretty-printing",
           "ignoreFailures": true
         }
-      ]
+      ],
+      "presentation": {
+        "group": "3 🚀 Cockpits",
+        "order": 1
+      }
     },
     {
-      "name": "OpenTIE (Debug, TIE Interceptor: battle 1 mission 4)",
+      "name": "⚡ TIE Interceptor (Debug, battle 1 mission 4)",
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
@@ -202,10 +314,14 @@
           "text": "-enable-pretty-printing",
           "ignoreFailures": true
         }
-      ]
+      ],
+      "presentation": {
+        "group": "3 🚀 Cockpits",
+        "order": 2
+      }
     },
     {
-      "name": "OpenTIE (Debug, Assault Gunboat: battle 1 mission 5)",
+      "name": "🔫 Assault Gunboat (Debug, battle 1 mission 5)",
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
@@ -236,10 +352,14 @@
           "text": "-enable-pretty-printing",
           "ignoreFailures": true
         }
-      ]
+      ],
+      "presentation": {
+        "group": "3 🚀 Cockpits",
+        "order": 3
+      }
     },
     {
-      "name": "OpenTIE (Debug, TIE Bomber: battle 3 mission 1)",
+      "name": "💣 TIE Bomber (Debug, battle 3 mission 1)",
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
@@ -270,10 +390,14 @@
           "text": "-enable-pretty-printing",
           "ignoreFailures": true
         }
-      ]
+      ],
+      "presentation": {
+        "group": "3 🚀 Cockpits",
+        "order": 4
+      }
     },
     {
-      "name": "OpenTIE (Debug, TIE Advanced: battle 6 mission 1)",
+      "name": "🌟 TIE Advanced (Debug, battle 6 mission 1)",
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
@@ -304,10 +428,14 @@
           "text": "-enable-pretty-printing",
           "ignoreFailures": true
         }
-      ]
+      ],
+      "presentation": {
+        "group": "3 🚀 Cockpits",
+        "order": 5
+      }
     },
     {
-      "name": "OpenTIE (Debug, TIE Defender: battle 8 mission 1)",
+      "name": "🛡️ TIE Defender (Debug, battle 8 mission 1)",
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
@@ -338,10 +466,14 @@
           "text": "-enable-pretty-printing",
           "ignoreFailures": true
         }
-      ]
+      ],
+      "presentation": {
+        "group": "3 🚀 Cockpits",
+        "order": 6
+      }
     },
     {
-      "name": "OpenTIE (Debug, Missile Boat: battle 11 mission 1)",
+      "name": "🎯 Missile Boat (Debug, battle 11 mission 1)",
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
@@ -372,119 +504,108 @@
           "text": "-enable-pretty-printing",
           "ignoreFailures": true
         }
-      ]
+      ],
+      "presentation": {
+        "group": "3 🚀 Cockpits",
+        "order": 7
+      }
+    },
+
+    // ────────────────────────────────────────────────────────────────────────
+    // 🎬  RECORD  (Release, video + audio, trims 2 s, opens the folder)
+    // ────────────────────────────────────────────────────────────────────────
+    {
+      "name": "🎬 Record OpenTIE (Release, with audio)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/tools/record/record_game.py",
+      "args": [
+        "--config",
+        "Release",
+        "--trim",
+        "2",
+        "--open-folder"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "preLaunchTask": "Build OpenTIE (Release)",
+      "presentation": {
+        "group": "4 🎬 Record",
+        "order": 1
+      }
     },
     {
-      "name": "OpenTIE (Debug, headless, skip to mission 1)",
-      "type": "cppdbg",
+      "name": "🔴 Record OpenTIE (Release, skip to mission 1, with audio)",
+      "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/build/Debug/OpenTIE.exe",
+      "program": "${workspaceFolder}/tools/record/record_game.py",
       "args": [
-        "--headless",
+        "--config",
+        "Release",
+        "--trim",
+        "2",
+        "--open-folder",
+        "--",
         "--skip-to-mission",
         "REPLICA"
       ],
-      "cwd": "${workspaceFolder}/build/Debug",
-      "stopAtEntry": false,
-      "externalConsole": false,
-      "environment": [
-        {
-          "name": "PATH",
-          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
-        },
-        {
-          "name": "SDL_ASSERT",
-          "value": "always_ignore"
-        }
-      ],
-      "MIMode": "gdb",
-      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
-      "preLaunchTask": "Build OpenTIE (Debug)",
-      "setupCommands": [
-        {
-          "text": "-enable-pretty-printing",
-          "ignoreFailures": true
-        }
-      ]
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "preLaunchTask": "Build OpenTIE (Release)",
+      "presentation": {
+        "group": "4 🎬 Record",
+        "order": 2
+      }
     },
     {
-      "name": "OpenTIE (Release, skip to mission 1, TFTC music)",
-      "type": "cppdbg",
+      "name": "🌌 Record OpenTIE (Release, mission 1-1 in a TIE Defender, launch film + hyperspace in, with audio)",
+      "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/build/Release/OpenTIE.exe",
+      "program": "${workspaceFolder}/tools/record/record_game.py",
       "args": [
+        "--config",
+        "Release",
+        "--trim",
+        "2",
+        "--open-folder",
+        "--",
         "--skip-to-mission",
         "REPLICA",
-        "--music",
-        "tftc"
+        "1",
+        "1",
+        "--player-craft",
+        "defender",
+        "--launch-film",
+        "--hyperspace-in"
       ],
-      "cwd": "${workspaceFolder}/build/Release",
-      "stopAtEntry": false,
-      "externalConsole": false,
-      "environment": [
-        {
-          "name": "PATH",
-          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
-        },
-        {
-          "name": "SDL_ASSERT",
-          "value": "always_ignore"
-        }
-      ],
-      "MIMode": "gdb",
-      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
-      "preLaunchTask": "Build OpenTIE (Release)"
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "preLaunchTask": "Build OpenTIE (Release)",
+      "presentation": {
+        "group": "4 🎬 Record",
+        "order": 3
+      }
     },
+
+    // ────────────────────────────────────────────────────────────────────────
+    // 🛠️  TOOLS
+    // ────────────────────────────────────────────────────────────────────────
     {
-      "name": "OpenTIE (Release, skip to mission 1, iMUSE MIDI music)",
-      "type": "cppdbg",
+      "name": "📝 Cockpit Notes (localhost:8765)",
+      "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/build/Release/OpenTIE.exe",
-      "args": [
-        "--skip-to-mission",
-        "REPLICA",
-        "--music",
-        "imuse"
-      ],
-      "cwd": "${workspaceFolder}/build/Release",
-      "stopAtEntry": false,
-      "externalConsole": false,
-      "environment": [
-        {
-          "name": "PATH",
-          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
-        },
-        {
-          "name": "SDL_ASSERT",
-          "value": "always_ignore"
-        }
-      ],
-      "MIMode": "gdb",
-      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
-      "preLaunchTask": "Build OpenTIE (Release)"
-    },
-    {
-      "name": "OpenTIE (Release)",
-      "type": "cppdbg",
-      "request": "launch",
-      "program": "${workspaceFolder}/build/Release/OpenTIE.exe",
-      "args": [],
-      "cwd": "${workspaceFolder}/build/Release",
-      "stopAtEntry": false,
-      "externalConsole": false,
-      "environment": [
-        {
-          "name": "PATH",
-          "value": "C:/msys64/ucrt64/bin;D:/development/OpenTIE-deps/prefix/bin;${env:PATH}"
-        },
-        {
-          "name": "SDL_ASSERT",
-          "value": "always_ignore"
-        }
-      ],
-      "MIMode": "gdb",
-      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
-      "preLaunchTask": "Build OpenTIE (Release)"
+      "program": "${workspaceFolder}/tools/cockpit_notes/server.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "serverReadyAction": {
+        "pattern": "Cockpit Notes on (http://localhost:[0-9]+/)",
+        "uriFormat": "%s",
+        "action": "openExternally"
+      },
+      "presentation": {
+        "group": "5 🛠️ Tools",
+        "order": 1
+      }
     }
   ]
 }

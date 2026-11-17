@@ -3,14 +3,23 @@
 [![GitHub Release](https://img.shields.io/github/v/release/elyosh/OpenTIE)](https://github.com/elyosh/OpenTIE/releases/latest)
 [![Visit our Discord server](https://img.shields.io/discord/1533001488391995442)](https://discord.gg/WBvYzczWfG)
 
-![A TFTC TIE fighter wingman and Star Destroyer seen from the TFTC TIE fighter cockpit](assets/opentie-tftc-tie-fighter.jpg)
+![A space station's hull seen from the TFTC TIE fighter cockpit, with the targeted craft on its screen](assets/opentie-tftc-tie-fighter.jpg)
 
-![A TFTC capital ship close alongside the TIE fighter cockpit](assets/opentie-tftc-capital-ship.jpg)
+![A capital ship close ahead of the TFTC TIE interceptor cockpit](assets/opentie-tftc-capital-ship.jpg)
 
 ![The TFTC TIE bomber cockpit with the HUD on its screens](assets/opentie-tftc-tie-bomber.jpg)
 
 *TIE Fighter Total Conversion's ship models and cockpits (not included with OpenTIE) in flight, with the HUD on
 each cockpit's own screens as its Dynamic Cockpit file lays it out.*
+
+<details>
+<summary>TFTC in X-Wing Alliance and in OpenTIE, cockpit by cockpit</summary>
+
+![Seven cockpits side by side, TFTC running in X-Wing Alliance on the left and OpenTIE on the right: TIE Fighter, TIE Interceptor, TIE Bomber, TIE Avenger, TIE Defender, Assault Gunboat and Missile Boat](assets/opentie-tftc-comparison.jpg)
+
+*Each craft in the same mission, on the left in TFTC running in X-Wing Alliance and on the right in OpenTIE.*
+
+</details>
 
 OpenTIE is an open-source reimplementation of *Star Wars: TIE Fighter* for
 Windows, macOS, and Linux. It runs the original game data natively on current

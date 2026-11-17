@@ -1432,8 +1432,10 @@ void tie_simulator(int replay_mode) {
 					return;
 				}
 #endif
-				if (pstate.player_fg_idx < 48 && !fg_array[pstate.player_fg_idx].start_fg_used &&
-					transitions_on && spec_data[pstate.player_spec_num].has_hyperdrive) {
+				if (pstate.player_fg_idx < 48 &&
+					((!fg_array[pstate.player_fg_idx].start_fg_used && transitions_on &&
+					  spec_data[pstate.player_spec_num].has_hyperdrive) ||
+					 create_player_hyperspace_in)) {
 					saved_drawbackdrop = drawbackdropflag;
 					saved_drawdebris = drawdebrisflag;
 					if (TIE_DISPLAY_DX5)
@@ -1514,8 +1516,10 @@ void tie_simulator(int replay_mode) {
 			TIE_FLIGHT_TRACE_MISSION_CREATED();
 #endif
 
-			if (pstate.player_fg_idx < 48 && !fg_array[pstate.player_fg_idx].start_fg_used &&
-				spec_data[pstate.player_spec_num].has_hyperdrive)
+			if (pstate.player_fg_idx < 48 &&
+				((!fg_array[pstate.player_fg_idx].start_fg_used &&
+				  spec_data[pstate.player_spec_num].has_hyperdrive) ||
+				 create_player_hyperspace_in))
 				msg_messageprintf(MSG_HYPER_COMPLETED);
 
 			if (mission.train_craft_type && mission.train_level > 1u) {

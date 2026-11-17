@@ -239,6 +239,12 @@ void fediskio_createpilotrecord(void) {
 		memcpy(mission.mission_linked_data, pilot->linked_data, 256);
 		currentbattle = pilot->cur_battle;
 		currentmission = pilot->battle_cursor[currentbattle];
+#ifdef TIE_MODERN
+		if (fsfx_skip_voice_id_a >= 12) {
+			currentbattle = (uint8_t)(fsfx_skip_voice_id_a - 12);
+			currentmission = (uint8_t)fsfx_skip_voice_id_b;
+		}
+#endif
 	} else {
 		const uint8_t* raw;
 
@@ -255,6 +261,12 @@ void fediskio_createpilotrecord(void) {
 		raw = (const uint8_t*)loadbuffer;
 		voice_id_a = pilot->cur_combat_ship;
 		voice_id_b = raw[0x67 + voice_id_a];
+#ifdef TIE_MODERN
+		if (fsfx_skip_voice_id_a >= 0) {
+			voice_id_a = (uint8_t)fsfx_skip_voice_id_a;
+			voice_id_b = (uint8_t)fsfx_skip_voice_id_b;
+		}
+#endif
 	}
 }
 /* loadbuffer holds the raw disk-format pilot record (two PILOTRECORD_DISK_SIZE

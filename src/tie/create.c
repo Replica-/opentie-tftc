@@ -79,6 +79,9 @@ uint8_t ordersflw[33] = {
 /* Mission-file species index to species_table index. */
 // GLOBAL: TIE95 0xC1834
 // GLOBAL: TIE98 0x4DF868
+uint8_t create_player_craft;
+uint8_t create_player_hyperspace_in;
+
 uint8_t speciesconvert[89] = {
 	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x08, 0x08, 0x0C, 0x0D, 0x0E,
 	0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D,
@@ -298,6 +301,15 @@ int16_t create_loadmission(const char* filename) {
 #endif
 
 	math2_getrandom();
+
+	if (create_player_craft) {
+		for (fg = 0; fg < mission_file_header.num_fg; fg++) {
+			if (fg_array[fg].player_flag) {
+				fg_array[fg].species = (int8_t)create_player_craft;
+				break;
+			}
+		}
+	}
 
 	pstate.player_fg_idx = 0xFF;
 	for (fg = 0; fg < mission_file_header.num_fg; fg++) {

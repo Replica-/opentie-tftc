@@ -105,6 +105,8 @@ uint8_t fullvolume[FSFX_NUM_DIST_ENTRIES] = {
 uint8_t voice_id_a;
 // GLOBAL: TIE95 0xD418E
 uint8_t voice_id_b;
+int16_t fsfx_skip_voice_id_a = -1;
+int16_t fsfx_skip_voice_id_b = -1;
 
 /* "FIBAGDM" -- single-letter filename prefix for combat-sim ships in
  * mode 1. Indexed by voice_id_a (cur_combat_ship). The trailing NUL

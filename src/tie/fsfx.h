@@ -184,6 +184,10 @@ extern uint8_t currentdigital;
  * yields a 0-based battle digit in the loader. */
 extern uint8_t voice_id_a; /* combat-sim ship 0..11, or 12+battle (mode 5) */
 extern uint8_t voice_id_b; /* combat-sim course / mission-mode mission idx */
+/* --skip-to-mission: the voice ids of the mission it flies, in place of the
+ * pilot record's combat chamber choice; -1 for none. */
+extern int16_t fsfx_skip_voice_id_a;
+extern int16_t fsfx_skip_voice_id_b;
 
 /* Voice-queue scheduler state. Storage owned by tie.c per watdbg; declared
  * here because the array size depends on FSFX_BLAST_QUEUE_SIZE. */

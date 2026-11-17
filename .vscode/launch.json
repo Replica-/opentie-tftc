@@ -15,6 +15,36 @@
       }
     },
     {
+      "name": "Record OpenTIE (Release, skip to mission 1, with audio)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/tools/record/record_game.py",
+      "args": ["--config", "Release", "--trim", "2", "--open-folder", "--", "--skip-to-mission", "REPLICA"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "preLaunchTask": "Build OpenTIE (Release)"
+    },
+    {
+      "name": "Record OpenTIE (Release, mission 1-1 in a TIE Defender, launch film + hyperspace in, with audio)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/tools/record/record_game.py",
+      "args": ["--config", "Release", "--trim", "2", "--open-folder", "--", "--skip-to-mission", "REPLICA", "1", "1", "--player-craft", "defender", "--launch-film", "--hyperspace-in"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "preLaunchTask": "Build OpenTIE (Release)"
+    },
+    {
+      "name": "Record OpenTIE (Release, with audio)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/tools/record/record_game.py",
+      "args": ["--config", "Release", "--trim", "2", "--open-folder"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "preLaunchTask": "Build OpenTIE (Release)"
+    },
+    {
       "name": "OpenTIE (Debug, gdb)",
       "type": "cppdbg",
       "request": "launch",

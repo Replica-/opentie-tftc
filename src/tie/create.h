@@ -135,6 +135,13 @@ extern uint8_t ordersflw[33];
 
 /* Craft-type -> species index (161-space narrowed to 89-space). */
 extern uint8_t speciesconvert[89];
+/* Developer option (--player-craft): the mission craft type the player's
+ * flight group flies in every mission loaded, or 0 for the mission's own. */
+extern uint8_t create_player_craft;
+/* Developer option (--hyperspace-in): every mission opens with the player's
+ * hyperspace arrival, whatever its craft, flight group or the transitions
+ * option. */
+extern uint8_t create_player_hyperspace_in;
 
 /* Species -> engine genus (ship family class). */
 extern uint8_t genusconvert[9];

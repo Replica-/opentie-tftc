@@ -24,6 +24,14 @@ typedef struct TieRuntimeConfig {
 	/* Developer shortcut: every pilot loaded has all tour battles completed,
 	 * so the combat chamber offers every tour mission. */
 	bool unlock_all;
+	/* Developer shortcut: the mission craft type the player flies in every
+	 * mission (9 = TIE Defender), or 0 for the mission's own. */
+	int player_craft;
+	/* Developer shortcut: every mission opens with the hyperspace arrival. */
+	bool hyperspace_in;
+	/* With skip_to_mission: the mission's launch film (scene 270) plays
+	 * first, as when flying it from the briefing. */
+	bool launch_film;
 } TieRuntimeConfig;
 
 bool TieRuntime_Init(const TieRuntimeConfig* config, char* error, size_t error_capacity);

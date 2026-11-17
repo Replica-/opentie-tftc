@@ -18,6 +18,9 @@ typedef struct TieLaunchOptions {
 	const char* missions;   /* "B6M1AW,HA1W": fly these mission files in turn (testing) */
 	const char* music;      /* "imuse", "tie98" or "tftc": music source for this run only; NULL = config */
 	bool unlock_all;        /* pilots loaded this run have every tour battle completed (saved to the pilot) */
+	int player_craft;       /* mission craft type the player flies in every mission, or 0 */
+	bool hyperspace_in;     /* every mission opens with the player's hyperspace arrival */
+	bool launch_film;       /* with skip_to_mission: the mission's launch film plays first */
 } TieLaunchOptions;
 
 int TieApplication_Run(const TieLaunchOptions* launch);

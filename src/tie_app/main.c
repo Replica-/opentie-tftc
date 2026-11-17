@@ -11,7 +11,7 @@ static int TieMain_Usage(const char* message, const char* argument) {
 		fprintf(stderr, "[tie-aeron] "), fprintf(stderr, message, argument), fputc('\n', stderr);
 	else if (message)
 		fprintf(stderr, "[tie-aeron] %s\n", message);
-	fprintf(stderr, "Usage: tie [--tie95-data <dir>] [--tie98-data <dir>] [--resource-root <dir>] [--skip-to-mission <pilot> [battle mission]] [--missions <file,file...>] [--headless] [--capture <file.png> [seconds]] [--press <keys>] [--music imuse|tie98|tftc] [--unlock-all]\n");
+	fprintf(stderr, "Usage: tie [--tie95-data <dir>] [--tie98-data <dir>] [--resource-root <dir>] [--skip-to-mission <pilot> [battle mission]] [--missions <file,file...>] [--headless] [--capture <file.png> [seconds]] [--press <keys>] [--music imuse|tie98|tftc] [--unlock-all] [--player-craft <craft>] [--hyperspace-in] [--launch-film]\n");
 	return 2;
 }
 
@@ -28,6 +28,37 @@ static int TieMain_ParseOptions(int argc, char* argv[], TieLaunchOptions* out) {
 		if (strcmp(argument, "--unlock-all") == 0) {
 			/* --unlock-all: every pilot loaded this run has all tour battles completed. */
 			out->unlock_all = true;
+			continue;
+		}
+		if (strcmp(argument, "--launch-film") == 0) {
+			/* --launch-film: with --skip-to-mission, the craft's launch film plays first. */
+			out->launch_film = true;
+			continue;
+		}
+		if (strcmp(argument, "--hyperspace-in") == 0) {
+			/* --hyperspace-in: every mission opens with the player's hyperspace arrival. */
+			out->hyperspace_in = true;
+			continue;
+		}
+		if (strcmp(argument, "--player-craft") == 0) {
+			/* --player-craft <craft>: the player flies this craft in every mission:
+			 * fighter, interceptor, bomber, advanced, defender, gunboat or a mission craft type. */
+			static const struct {
+				const char* name;
+				int type;
+			} crafts[] = { { "fighter", 5 }, { "interceptor", 6 }, { "bomber", 7 },
+						   { "advanced", 8 }, { "defender", 9 },	  { "gunboat", 16 } };
+			const char* craft = index + 1 < argc ? argv[++index] : NULL;
+			out->player_craft = 0;
+			for (size_t c = 0; craft && c < sizeof crafts / sizeof crafts[0]; ++c)
+				if (strcmp(craft, crafts[c].name) == 0)
+					out->player_craft = crafts[c].type;
+			if (craft && !out->player_craft && craft[0] >= '1' && craft[0] <= '9')
+				out->player_craft = atoi(craft);
+			if (out->player_craft <= 0 || out->player_craft > 88)
+				return TieMain_Usage("--player-craft takes fighter, interceptor, bomber, advanced, defender, "
+									 "gunboat or a craft type: %s",
+									 craft ? craft : "");
 			continue;
 		}
 		if (strcmp(argument, "--music") == 0) {

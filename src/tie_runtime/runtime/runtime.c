@@ -3,6 +3,7 @@
 #include <landru/host_timing.h>
 
 #include "tie/dsound_wave_tie98.h"
+#include "tie/create.h"
 #include "tie/fediskio.h"
 #include "tie/frontend_display_tie98.h"
 #include "tie/fsfx.h"
@@ -179,11 +180,14 @@ bool TieRuntime_Init(const TieRuntimeConfig* config, char* error, size_t error_c
 	g_playerEngineSoundUpdateEnabled = TieProfile_Flight()->player_engine_sound_enabled ? 1 : 0;
 	strcpy(resourcedir, "RESOURCE/");
 	shipext_unlock_all = config->unlock_all;
+	create_player_craft = (uint8_t)config->player_craft;
+	create_player_hyperspace_in = config->hyperspace_in ? 1u : 0u;
 
 	if (config->skip_to_mission) {
 		/* The shell loads the ship tables while opening, so the pilot's mission
 		 * can only be selected once it has been started on the flight scene. */
-		TieShell_Begin(SCENE_FLIGHT_BATTLE, 1);
+		/* The launch film goes on into the flight (shellext transition_check). */
+		TieShell_Begin(config->launch_film && !config->test_missions ? 270 : SCENE_FLIGHT_BATTLE, 1);
 		if (config->skip_pilot && shipext_Load_Pilot(config->skip_pilot)) {
 			if (config->skip_battle > 0 && config->skip_battle <= NUM_BATTLES && config->skip_mission > 0) {
 				const int battle = config->skip_battle - 1;
@@ -192,10 +196,27 @@ bool TieRuntime_Init(const TieRuntimeConfig* config, char* error, size_t error_c
 				pilot_record.battle_cursor[battle] = (uint8_t)(config->skip_mission - 1);
 			}
 			TieRuntime_SetTestMissions(config->test_missions);
-			if (s_test_mission_count)
+			if (s_test_mission_count) {
 				TieRuntime_SelectTestMission();
-			else
+			} else {
 				shipext_Set_Tour_Battle();
+				/* The launch film and loadout follow --player-craft's craft:
+				 * its SHIPn.LFD (fighter, interceptor, bomber, advanced,
+				 * gunboat, defender). */
+				static const struct {
+					int craft;
+					int16_t ship;
+				} ships[] = { { 5, 0 }, { 6, 1 }, { 7, 2 }, { 8, 3 }, { 16, 4 }, { 9, 5 } };
+				for (size_t i = 0; i < sizeof ships / sizeof ships[0]; ++i)
+					if (config->player_craft == ships[i].craft)
+						shipext_Set_Mission_Ship(ships[i].ship);
+				/* The flight reloads the pilot and names the mission's voice bank
+				 * (fsfx_loadvoicelfd) after its record's combat chamber choice;
+				 * name it after this mission, as the combat chamber does for a
+				 * tour mission (12 + battle). */
+				fsfx_skip_voice_id_a = (int16_t)(12 + pilot_record.cur_battle);
+				fsfx_skip_voice_id_b = pilot_record.battle_cursor[pilot_record.cur_battle];
+			}
 			TieDiagnostics_Log(TIE_LOG_INFO, "[SKIP] pilot %s, mission %s\n", config->skip_pilot,
 							   shipext_Get_Mission_Name());
 		} else {
